@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ระบบจ้างงานระหว่างเรียน มหาวิทยาลัยอุบลราชธานี</title>
+  <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+  <link rel="stylesheet" href="./assets/css/styles.css">
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+</head>
+<body>
+<div id="customLoader">
+<div class="loader-box">
+<div class="loader-text">ระบบกำลังประมวลผล กรุณารอสักครู่</div>
+<div class="loader-track">
+<div class="loader-bar"></div>
+</div>
+</div>
+</div>
+<div id="authLayout" style="display: none;">
+<div class="login-wrapper">
+<div class="login-image-side">
+<div class="login-image-text">
+<h1 style="font-size: 32px; line-height: 1.2; white-space: nowrap;">ระบบจ้างงานระหว่างเรียน มหาวิทยาลัยอุบลราชธานี</h1>
+<p style="font-size: 20px; margin-bottom: 25px;">
+          ค้นหาประสบการณ์ที่ใช่ เพิ่มรายได้ระหว่างเรียน<br/>พร้อมสร้างทักษะชีวิตด้วยแพลตฟอร์มออนไลน์จ้างงานระหว่างเรียน
+        </p>
+<p style="font-size: 15px; opacity: 0.8; margin-bottom: 25px;">
+          ออกเเบบเเละพัฒนาระบบโดย : งานสวัสดิการนักศึกษา กองพัฒนานักศึกษา<br/>ระบบขัดข้องหรือพบปัญหา โทร 045-353000 ต่อ 1210
+        </p>
+<div>
+<a href="https://script.google.com/macros/s/AKfycbwYqfHYTQuuU6O4mU-Y1BJgFxRRIEjrtzZ2dRqFXYtm0FdtRH9gEr_Widn69ApUFnwB/exec" style="display: inline-flex; align-items: center; gap: 8px; color: #fff; text-decoration: none; border: 1px solid rgba(255,255,255,0.4); padding: 10px 20px; border-radius: 30px; font-size: 14px; background: rgba(255,255,255,0.1); transition: all 0.3s;" target="_blank">
+<i class="material-icons" style="font-size: 18px;">launch</i>
+              ระบบสร้างบันทึกข้อความเบิกจ่าย (สำหรับเจ้าหน้าที่)
+           </a>
+</div>
+</div>
+</div>
+<div class="login-form-side">
+<div class="section active login-form-container" id="loginSection">
+<div class="login-header">
+<img alt="UBU Logo" class="login-logo" src="https://lh3.googleusercontent.com/d/1RZyiY78Czi9T7-gZjUfAJ6yCHCLRI7UK"/>
+<h2 class="login-title" style="color: #000000; font-size: 22px; margin-bottom: 5px;">
+            เข้าสู่ระบบ
+          </h2>
+<p class="login-subtitle" style="color: #000000; font-weight: 500; margin-top: 0; opacity: 1;">
+            ระบบจ้างงานระหว่างเรียน มหาวิทยาลัยอุบลราชธานี
+          </p>
+</div>
+<form id="loginForm">
+<div class="floating-input-group">
+<input autocomplete="off" class="floating-input" id="loginStudentId" placeholder=" " required="" type="text"/>
+<label class="floating-label">รหัสนักศึกษา/รหัสหน่วยงาน</label>
+<i class="material-icons" style="position: absolute; right: 15px; top: 14px; color: #cbd5e1;">person</i>
+</div>
+<div class="floating-input-group">
+<input class="floating-input" id="loginPassword" placeholder=" " required="" type="password"/>
+<label class="floating-label">รหัสผ่าน</label>
+<i class="material-icons toggle-password" onclick="togglePassword('loginPassword', this)" style="position: absolute; right: 15px; top: 14px; color: #94a3b8; cursor: pointer;">visibility_off</i>
+</div>
+<button class="btn-login-new" type="submit">
+            เข้าสู่ระบบ <i class="material-icons" style="vertical-align: middle; font-size: 18px; margin-left: 5px;">arrow_forward</i>
+</button>
+</form>
+<div class="login-footer" style="color: #000000;">
+<span style="color: #666;">สำหรับนักศึกษาที่ยังไม่มีบัญชี</span>
+<!-- ตรงนี้คือจุดที่แก้ไขเพิ่มเติมคำสั่ง onclick เข้าไปในปุ่มโดยตรง -->
+<a href="#" id="showSignup" onclick="document.getElementById('checkEligibleId').value=''; showSection('checkEligibilitySection'); return false;" style="margin-left: 5px; color: var(--secondary-color);">ลงทะเบียนใหม่</a>
+<br/><br/>
+<div style="font-size: 13px; color: #333; line-height: 1.6; font-weight: 500;">
+            งานสวัสดิการนักศึกษา กองพัฒนานักศึกษา<br/>
+            มหาวิทยาลัยอุบลราชธานี
+          </div>
+<div style="font-size: 12px; color: #666; margin-top: 5px;">
+            สงวนลิขสิทธิ์ © 2026 <span style="margin: 0 5px;">|</span> Version 2.8.7
+          </div>
+</div>
+<div id="publicPrContainer"></div>
+</div>
+<div class="section login-form-container" id="otpSection" style="display: none; max-width: 450px;">
+<div class="login-header">
+<div style="background: #e3f2fd; width: 60px; height: 60px; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 15px auto;">
+<i class="material-icons" style="font-size: 32px; color: #0d47a1;">mark_email_read</i>
+</div>
+<h2 class="login-title" style="font-size: 22px;">ยืนยันรหัสความปลอดภัย</h2>
+<p class="login-subtitle">
+              ระบบได้ส่งรหัส OTP 6 หลัก ไปที่อีเมลที่ท่านลงทะเบียนใช้งาน<br/>
+<strong id="otpEmailHint" style="color: #0d47a1; font-size: 15px;"></strong>
+</p>
+</div>
+<form id="otpForm">
+<div class="floating-input-group" style="margin-bottom: 30px;">
+<input autocomplete="off" class="floating-input" id="otpCodeInput" maxlength="6" oninput="this.value = this.value.replace(/[^0-9]/g, '')" pattern="[0-9]{6}" placeholder=" " required="" style="text-align: center; font-size: 24px; letter-spacing: 8px; font-weight: bold;" type="text"/>
+<label class="floating-label" style="left: 50%; transform: translateX(-50%); background: #fff; padding: 0 10px;">รหัส OTP 6 หลัก</label>
+</div>
+<button class="btn-login-new" id="btnVerifyOtp" type="submit">
+<i class="material-icons" style="vertical-align: middle; font-size: 18px; margin-right: 5px;">verified</i> ยืนยันเข้าสู่ระบบ
+            </button>
+</form>
+<div class="login-footer" style="margin-top: 25px; display: flex; flex-direction: column; align-items: center; gap: 15px; width: 100%;">
+<div style="font-size: 14px;">
+<span style="color: #64748b;">ไม่ได้รับอีเมลรหัส OTP?</span>
+<a href="#" id="resendOtpBtn" onmouseout="this.style.backgroundColor='#e3f2fd'" onmouseover="this.style.backgroundColor='#bbdefb'" style="margin-left: 5px; color: var(--secondary-color); font-weight: 700; text-decoration: none; padding: 4px 10px; border-radius: 20px; background-color: #e3f2fd; transition: all 0.2s;">
+                ส่งรหัสอีกครั้ง
+              </a>
+</div>
+<a href="#" onclick="showSection('loginSection'); return false;" onmouseout="this.style.color='#64748b'" onmouseover="this.style.color='var(--secondary-color)'" style="color: #64748b; font-size: 14px; text-decoration: none; display: inline-flex; align-items: center; gap: 4px; font-weight: 600; transition: color 0.2s;">
+<i class="material-icons" style="font-size: 18px;">arrow_back</i> กลับหน้าเข้าสู่ระบบ
+            </a>
+<div onmouseout="this.style.boxShadow='none'" onmouseover="this.style.boxShadow='0 2px 8px rgba(0,0,0,0.05)'" style="margin-top: 10px; width: 100%; padding: 12px 15px; background-color: #f8fafc; border: 1px dashed #cbd5e1; border-radius: 10px; text-align: center; box-sizing: border-box; transition: box-shadow 0.3s;">
+<div style="font-size: 13px; color: #475569; line-height: 1.6;">
+<div style="display: flex; align-items: center; justify-content: center; gap: 5px; color: #334155; font-weight: 700; margin-bottom: 2px;">
+<i class="material-icons" style="font-size: 16px; color: var(--secondary-color);">support_agent</i> 
+                  ต้องการความช่วยเหลือ
+                </div>
+                หากไม่สามารถดำเนินการได้ กรุณาติดต่อเจ้าหน้าที่<br/>
+<span style="font-weight: 700; color: #1e293b; font-size: 14px;">โทร 045-353000 ต่อ 1210</span>
+</div>
+</div>
+</div>
+</div>
+<div class="section login-form-container" id="checkEligibilitySection" style="display: none; max-width: 380px !important; margin: auto;">
+<div class="login-header" style="border-bottom: 1px solid #f1f5f9; padding-bottom: 20px; margin-bottom: 25px;">
+<div style="background: #eff6ff; width: 60px; height: 60px; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 15px auto;">
+<i class="material-icons" style="font-size: 32px; color: #1e3a8a;">verified_user</i>
+</div>
+<h2 class="login-title" style="font-size: 22px;">ตรวจสอบสิทธิ์</h2>
+<p class="login-subtitle" style="margin-top: 8px;">กรุณาระบุรหัสนักศึกษาเพื่อตรวจสอบสิทธิ์ก่อนลงทะเบียน</p>
+</div>
+<form id="eligibilityForm">
+<div class="floating-input-group">
+<input class="floating-input" id="checkEligibleId" placeholder=" " required="" style="text-align: center; font-weight: bold; font-size: 16px; letter-spacing: 1px; padding-left: 16px;" type="text"/>
+<label class="floating-label" style="left: 50%; transform: translateX(-50%); background: #fff; padding: 0 5px;">รหัสนักศึกษา 11 หลัก</label>
+</div>
+<button class="btn-login-new" style="margin-top: 5px;" type="submit">
+<i class="material-icons" style="vertical-align: middle; font-size: 18px; margin-right: 4px;">search</i> ตรวจสอบสิทธิ์
+            </button>
+</form>
+<div class="login-footer">
+<a href="#" onclick="showSection('loginSection'); return false;" style="color: #64748b; display: inline-flex; align-items: center; gap: 4px; transition: color 0.2s;">
+<i class="material-icons" style="font-size: 16px;">arrow_back</i> กลับหน้าเข้าสู่ระบบ
+            </a>
+</div>
+</div>
+<div class="section login-form-container" id="signupSection" style="display: none; max-width: 600px;">
+<div class="login-header">
+<h2 class="login-title">ลงทะเบียนขอสิทธิ์ใช้งาน</h2>
+<p class="login-subtitle">กรอกข้อมูลเพื่อสร้างบัญชีผู้ใช้งาน</p>
+</div>
+<form id="signupForm">
+<div class="signup-grid">
+<div>
+<div class="floating-input-group">
+<select class="floating-input" id="signupPrefix" required="">
+<option disabled="" selected="" value=""></option>
+<option value="นาย">นาย</option>
+<option value="นาง">นาง</option>
+<option value="นางสาว">นางสาว</option>
+</select>
+<label class="floating-label">คำนำหน้า</label>
+</div>
+</div>
+<div>
+<div class="floating-input-group">
+<input class="floating-input" id="signupGmail" placeholder=" " required="" type="email"/>
+<label class="floating-label">บัญชีอีเมล</label>
+</div>
+</div>
+<div>
+<div class="floating-input-group">
+<input class="floating-input" id="signupFirstName" placeholder=" " required="" type="text"/>
+<label class="floating-label">ชื่อตัว (ไม่ระบุคำนำหน้านาม)</label>
+</div>
+</div>
+<div>
+<div class="floating-input-group">
+<input class="floating-input" id="signupLastName" placeholder=" " required="" type="text"/>
+<label class="floating-label">นามสกุล</label>
+</div>
+</div>
+<div>
+<div class="floating-input-group">
+<input class="floating-input" id="signupStudentId" placeholder=" " readonly="" required="" style="background-color: #f1f5f9;" type="text"/>
+<label class="floating-label">รหัสนักศึกษา</label>
+</div>
+</div>
+<div>
+<div class="floating-input-group">
+<input class="floating-input" id="signupPhone" pattern="[0-9]{10}" placeholder=" " required="" type="tel"/>
+<label class="floating-label">เบอร์โทรศัพท์ (10 หลัก)</label>
+</div>
+</div>
+<div class="full-width">
+<div class="floating-input-group">
+<select class="floating-input" id="signupFaculty" required="">
+<option disabled="" selected="" value=""></option>
+<option value="เกษตรศาสตร์">เกษตรศาสตร์</option>
+<option value="วิทยาศาสตร์">วิทยาศาสตร์</option>
+<option value="วิศวกรรมศาสตร์">วิศวกรรมศาสตร์</option>
+<option value="ศิลปศาสตร์">ศิลปศาสตร์</option>
+<option value="เภสัชศาสตร์">เภสัชศาสตร์</option>
+<option value="บริหารศาสตร์">บริหารศาสตร์</option>
+<option value="พยาบาลศาสตร์">พยาบาลศาสตร์</option>
+<option value="ศิลปประยุกต์และสถาปัตยกรรมศาสตร์">ศิลปประยุกต์และสถาปัตยกรรมศาสตร์</option>
+<option value="นิติศาสตร์">นิติศาสตร์</option>
+<option value="รัฐศาสตร์">รัฐศาสตร์</option>
+<option value="ศึกษาศาสตร์">ศึกษาศาสตร์</option>
+<option value="วิทยาลัยแพทยศาสตร์และการสาธารณสุข">วิทยาลัยแพทยศาสตร์และการสาธารณสุข</option>
+</select>
+<label class="floating-label">คณะ</label>
+</div>
+</div>
+<div class="full-width">
+<div class="floating-input-group">
+<input class="floating-input" id="signupPassword" placeholder=" " required="" type="password"/>
+<label class="floating-label">กำหนดรหัสผ่านเข้าใช้งาน</label>
+</div>
+</div>
+</div>
+<button class="btn-login-new" style="background: linear-gradient(135deg, #2e7d32 0%, #43a047 100%);" type="submit">
+<i class="material-icons" style="vertical-align: middle;">check_circle</i> ยืนยันการสมัคร
+            </button>
+</form>
+<div class="login-footer">
+<a href="#" id="showLogin" onclick="showSection('loginSection'); return false;" style="color: #666;">
+<i class="material-icons" style="vertical-align: middle; font-size: 16px;">arrow_back</i> ยกเลิก / กลับหน้าเข้าสู่ระบบ
+            </a>
+</div>
+</div>
+</div>
+</div>
+</div>
+<div id="protectedAppMount"></div>
+<script src="./assets/js/config.js"></script>
+<script src="./assets/js/api.js"></script>
+<script src="./assets/js/login.js"></script>
+</body>
+</html>
