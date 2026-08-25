@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>ทดสอบ Apps Script API</title>
+  <style>
+    body { font-family: Arial, sans-serif; max-width: 760px; margin: 40px auto; padding: 0 16px; line-height: 1.6; }
+    button { padding: 10px 16px; }
+    pre { white-space: pre-wrap; background: #f5f5f5; padding: 14px; border-radius: 8px; }
+  </style>
+</head>
+<body>
+  <h1>ทดสอบ GitHub Pages → Apps Script</h1>
+  <p>แก้ API_URL ใน <code>assets/js/config.js</code> ก่อน แล้วกดปุ่มทดสอบ</p>
+  <button id="testBtn">ทดสอบ API</button>
+  <pre id="result">ยังไม่ได้ทดสอบ</pre>
+  <script src="./assets/js/config.js"></script>
+  <script src="./assets/js/api.js"></script>
+  <script>
+    document.getElementById('testBtn').onclick = async function () {
+      const out = document.getElementById('result');
+      out.textContent = 'กำลังเชื่อมต่อ...';
+      try {
+        const data = await window.GAS_API.call('__ping', []);
+        out.textContent = 'สำเร็จ\n' + JSON.stringify(data, null, 2);
+      } catch (e) {
+        out.textContent = 'ไม่สำเร็จ\n' + (e && e.stack ? e.stack : String(e));
+      }
+    };
+  </script>
+</body>
+</html>
