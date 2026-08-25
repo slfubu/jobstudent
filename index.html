@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ระบบจ้างงานระหว่างเรียน</title>
+  <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+  <script src="https://unpkg.com/pdf-lib/dist/pdf-lib.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <script>pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';</script>
+
+<?!= include('Styles'); ?>
+</head>
+
+<body>
+<?!= include('Body'); ?>
+<?!= include('Scripts_01_Core'); ?>
+<?!= include('Scripts_02_Users'); ?>
+<?!= include('Scripts_03_Budget'); ?>
+<?!= include('Scripts_04_Disbursement'); ?>
+<?!= include('Scripts_05_Timekeeping'); ?>
+<?!= include('Scripts_06_AnalyticsDocs'); ?>
+<?!= include('Scripts_07_AuditPrint'); ?>
+<?!= include('Scripts_08_AuthPdf'); ?>
+<?!= include('Scripts_09_History'); ?>
+</body>
+</html>

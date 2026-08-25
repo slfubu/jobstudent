@@ -1,0 +1,3040 @@
+  <style>
+    /* Toggle Switch Style (ปุ่มเปิด-ปิดของแอดมิน) */
+  .switch { position: relative; display: inline-block; width: 50px; height: 28px; }
+  .switch input { opacity: 0; width: 0; height: 0; }
+  .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #ccc; transition: .4s; border-radius: 34px; }
+  .slider:before { position: absolute; content: ""; height: 20px; width: 20px; left: 4px; bottom: 4px; background-color: white; transition: .4s; border-radius: 50%; }
+  input:checked + .slider { background-color: #2196F3; }
+  input:checked + .slider:before { transform: translateX(22px); }
+
+  /* Rating Table Style */
+  .rating-table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
+  .rating-table th, .rating-table td { border-bottom: 1px solid #eee; padding: 12px; text-align: center; }
+  .rating-table th { background: #f8f9fa; font-size: 13px; color: #555; }
+  .rating-table td.question-cell { text-align: left; font-weight: 500; color: #333; }
+  .rating-radio { transform: scale(1.2); cursor: pointer; }
+    /* --- Mobile Timekeeping Design --- */
+
+/* ซ่อน List มือถือเมื่ออยู่หน้าจอใหญ่ */
+.mobile-time-list {
+    display: none; 
+}
+
+/* ปรับปรุงฟอร์มลงเวลาให้เรียงแนวตั้งบนมือถือ */
+@media (max-width: 768px) {
+    /* ซ่อนตาราง Desktop */
+    #timeLogTable {
+        display: none;
+    }
+
+    /* แสดง List มือถือ */
+    .mobile-time-list {
+        display: block;
+    }
+
+    /* ปรับฟอร์มกรอกข้อมูล */
+    #attendanceBox > div {
+        grid-template-columns: 1fr !important; /* เรียง input ลงมา */
+        gap: 15px !important;
+    }
+    
+    #timeInputContainer > div {
+        grid-template-columns: 1fr !important;
+    }
+
+    /* การ์ดวันที่ (Header ของแต่ละวัน) */
+    .mobile-date-header {
+        background: #e3f2fd;
+        color: #0d47a1;
+        padding: 10px 15px;
+        border-radius: 8px;
+        margin-top: 20px;
+        margin-bottom: 10px;
+        font-weight: bold;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+    }
+
+    /* การ์ดรายการลงเวลา */
+    .mobile-time-card {
+        background: #fff;
+        border: 1px solid #eee;
+        border-radius: 10px;
+        padding: 15px;
+        margin-bottom: 12px;
+        position: relative;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.03);
+        border-left: 4px solid var(--secondary-color);
+    }
+
+    .mt-row {
+        display: flex;
+        justify-content: space-between;
+        margin-bottom: 8px;
+    }
+
+    .mt-time {
+        font-size: 16px;
+        font-weight: bold;
+        color: #333;
+    }
+
+    .mt-detail {
+        font-size: 14px;
+        color: #666;
+        background: #f9f9f9;
+        padding: 8px;
+        border-radius: 6px;
+        margin-bottom: 10px;
+    }
+
+    .mt-footer {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        border-top: 1px dashed #eee;
+        padding-top: 10px;
+    }
+
+    .mt-amount {
+        font-weight: bold;
+        color: var(--secondary-color);
+        font-size: 15px;
+    }
+
+    .mt-actions button {
+        padding: 6px 12px !important;
+        font-size: 13px !important;
+        margin-left: 5px;
+    }
+}
+/* --- CSS จัดระเบียบหน้าจอมือถือ (แบบครบเครื่อง: ชื่อระบบ + ข้อมูลตัวย่อ + ปุ่มไม่ตก) --- */
+@media (max-width: 768px) {
+
+    /* 1. จัดโครงสร้างหลัก Topbar */
+    .topbar {
+        display: flex !important;
+        align-items: center !important;
+        justify-content: space-between !important; /* ดันซ้าย-ขวาแยกกัน */
+        padding: 0 8px !important; /* ลดขอบซ้ายขวา */
+        height: 60px;
+        gap: 5px; /* ระยะห่างระหว่างก้อนซ้ายกับก้อนขวา */
+    }
+
+    /* --- [ส่วนซ้าย: เมนู + ชื่อระบบ] --- */
+    .topbar > div:first-child {
+        display: flex !important;
+        align-items: center !important;
+        flex: 1; /* ให้กินพื้นที่ส่วนซ้าย */
+        min-width: 0; /* สำคัญ! ให้หดได้ถ้าที่เต็ม */
+        overflow: hidden;
+    }
+
+    .toggle-btn {
+        padding: 0 5px 0 0 !important; /* ลดระยะห่างปุ่มเมนู */
+        flex-shrink: 0;
+    }
+
+    .system-title {
+        display: block !important; /* แสดงชื่อระบบแล้ว */
+        font-size: 14px !important; /* ลดขนาดฟอนต์ */
+        font-weight: 600 !important;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis; /* ถ้าชื่อระบบยาวเกินให้ขึ้น ... */
+        margin-left: 5px !important;
+        color: #1e3a8a; /* สีน้ำเงินเข้มให้ดูเด่น */
+    }
+
+    /* --- [ส่วนขวา: ข้อมูลผู้ใช้ + ปุ่มออก] --- */
+    .user-profile {
+        display: flex !important;
+        align-items: center !important;
+        justify-content: flex-end;
+        gap: 8px;
+        flex-shrink: 0; /* ห้ามส่วนขวาหดจนเละ */
+        max-width: 55%; /* จำกัดพื้นที่ส่วนขวาไม่ให้เกินครึ่งจอ (เพื่อให้ชื่อระบบมีที่ยืน) */
+    }
+
+    /* ซ่อนไอคอนคนตัวใหญ่ */
+    .user-profile > .material-icons {
+        display: none !important;
+    }
+
+    /* กล่องข้อความ (ชื่อ + คณะ) */
+    .user-profile div {
+        display: flex !important;
+        flex-direction: column !important;
+        align-items: flex-end !important;
+        overflow: hidden;
+        min-width: 0;
+    }
+
+    /* ชื่อผู้ใช้ */
+    .user-name {
+        font-size: 12px !important;
+        white-space: nowrap !important;
+        overflow: hidden !important;
+        text-overflow: ellipsis !important;
+        max-width: 100%; /* ให้เต็มพื้นที่กล่อง */
+    }
+
+    /* ชื่อคณะ */
+    #displayUserFaculty {
+        display: block !important;
+        font-size: 10px !important; /* ตัวเล็กหน่อย */
+        color: #64748b;
+        white-space: nowrap !important;
+        overflow: hidden !important;
+        text-overflow: ellipsis !important;
+        max-width: 100%;
+        margin-top: -2px; /* ดึงขึ้นให้ชิดชื่อ */
+    }
+
+    /* ปุ่มออกจากระบบ (ไอคอนวงกลม) */
+    .btn-logout {
+        font-size: 0 !important;
+        padding: 0 !important;
+        width: 32px !important; /* ปรับขนาดให้กระทัดรัด */
+        height: 32px !important;
+        border-radius: 50% !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        border: 1px solid #ffcdd2 !important;
+        background-color: #ffebee !important;
+        flex-shrink: 0 !important;
+    }
+
+    .btn-logout::before {
+        content: 'logout';
+        font-family: 'Material Icons';
+        font-size: 16px !important;
+        color: #c62828 !important;
+    }
+}
+    /* สไตล์สำหรับชื่อคณะในตารางสถิติ */
+.faculty-name-cell {
+    cursor: pointer;
+    color: #1e293b; /* สีข้อความปกติ (ออกโทนดำเทาเข้ม) */
+    font-weight: 500;
+    transition: all 0.2s ease;
+    text-decoration: none !important; /* เอาขีดเส้นใต้ออกเด็ดขาด */
+}
+
+/* เอฟเฟกต์เมื่อเอาเมาส์ไปชี้ (Hover) */
+.faculty-name-cell:hover {
+    color: #0d47a1; /* เปลี่ยนเป็นสีน้ำเงินเมื่อชี้ */
+    background-color: #f1f5f9; /* เพิ่มสีพื้นหลังจางๆ ให้รู้ว่ากดได้ */
+    padding-left: 15px; /* เพิ่มลูกเล่นขยับนิดหน่อย */
+}
+    /* --- CSS สำหรับการพิมพ์แบบต่อเนื่อง (Multi-page Table) --- */
+@media print {
+    /* สั่งให้ thead แสดงซ้ำทุกหน้า */
+    thead { 
+        display: table-header-group !important; 
+    }
+    
+    /* ป้องกันแถวถูกตัดครึ่ง */
+    tr { 
+        page-break-inside: avoid; 
+    }
+    
+    /* ส่วนลายเซ็นห้ามถูกตัดครึ่ง และให้เกาะกลุ่มกัน */
+    .signature-block {
+        page-break-inside: avoid;
+        margin-top: 30px;
+    }
+
+    /* ปรับระยะขอบกระดาษให้พอดี */
+    @page { 
+        margin: 1cm; 
+        size: A4 portrait;
+    }
+    
+    /* ซ่อน UI ระบบ */
+    body * { visibility: hidden; }
+    #printTimeSheetArea, #printTimeSheetArea * { 
+        visibility: visible; 
+    }
+    #printTimeSheetArea {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 100%;
+        padding: 0;
+        margin: 0;
+    }
+}
+    /*------------------------------------------------------ Forecasting Specific Styles */
+.fc-row-actual { background-color: #fff; }
+.fc-row-forecast { background-color: #f9fbfd; color: #555; font-style: italic; }
+
+.trend-badge {
+    font-size: 11px; padding: 2px 6px; border-radius: 4px; font-weight: 600;
+}
+.trend-actual { background: #e3f2fd; color: #1565c0; border: 1px solid #bbdefb; }
+.trend-forecast { background: #f3e5f5; color: #7b1fa2; border: 1px solid #e1bee7; }
+
+/* Table Numbers Alignment */
+#forecastTable td:nth-child(3), 
+#forecastTable td:nth-child(4), 
+#forecastTable td:nth-child(5) {
+    font-family: 'Courier New', Courier, monospace; /* Monospace for number alignment */
+    font-weight: 600;
+    font-size: 13px;
+}
+    /* Stats Card Grid */
+.stats-summary-grid {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;
+}
+.summary-card {
+    background: #fff; padding: 15px; border-radius: 8px; border: 1px solid #eee;
+    display: flex; align-items: center; gap: 15px; box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+}
+.sc-icon {
+    width: 50px; height: 50px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+}
+.sc-info h4 { margin: 0; font-size: 13px; color: #777; }
+.sc-info .num { margin: 0; font-size: 20px; font-weight: bold; color: #333; }
+
+/* Progress Bar */
+.progress-container { background: #eee; height: 6px; border-radius: 3px; width: 100%; margin-top: 5px; overflow: hidden; }
+.progress-bar { height: 100%; transition: width 0.5s; }
+
+    /* --- CSS สำหรับหน้าคู่มือ (Manual) --- */
+.manual-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 30px;
+    padding: 20px;
+}
+
+.manual-card {
+    background: #fff;
+    border: 1px solid #e0e0e0;
+    border-radius: 16px;
+    padding: 30px 20px;
+    text-align: center;
+    text-decoration: none; /* ลบเส้นใต้ลิงก์ */
+    color: #333;
+    transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+    position: relative;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    height: 100%;
+}
+
+.manual-card:hover {
+    transform: translateY(-8px);
+    box-shadow: 0 15px 30px rgba(0,0,0,0.1);
+    border-color: transparent;
+}
+
+.manual-icon-bg {
+    width: 80px;
+    height: 80px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 20px;
+    font-size: 40px;
+    transition: transform 0.3s;
+}
+
+.manual-card:hover .manual-icon-bg {
+    transform: scale(1.1);
+}
+
+.manual-card h3 {
+    margin: 0 0 10px 0;
+    font-size: 20px;
+    font-weight: 700;
+}
+
+.manual-card p {
+    font-size: 14px;
+    color: #666;
+    line-height: 1.6;
+    margin-bottom: 25px;
+    flex-grow: 1;
+}
+
+.manual-btn {
+    padding: 10px 20px;
+    border-radius: 30px;
+    font-size: 14px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    transition: all 0.3s;
+}
+
+/* สีเฉพาะแต่ละการ์ด */
+/* นักศึกษา - สีเขียว/ส้ม */
+.manual-student .manual-icon-bg { background: #fff3e0; color: #f57c00; }
+.manual-student h3 { color: #f57c00; }
+.manual-student .manual-btn { background: #fff3e0; color: #f57c00; }
+.manual-student:hover .manual-btn { background: #f57c00; color: #fff; }
+
+/* หน่วยงาน - สีน้ำเงิน */
+.manual-staff .manual-icon-bg { background: #e3f2fd; color: #1976D2; }
+.manual-staff h3 { color: #1976D2; }
+.manual-staff .manual-btn { background: #e3f2fd; color: #1976D2; }
+.manual-staff:hover .manual-btn { background: #1976D2; color: #fff; }
+
+/* แอดมิน - สีเทาเข้ม/กรมท่า */
+.manual-admin .manual-icon-bg { background: #eceff1; color: #37474f; }
+.manual-admin h3 { color: #37474f; }
+.manual-admin .manual-btn { background: #eceff1; color: #37474f; }
+.manual-admin:hover .manual-btn { background: #37474f; color: #fff; }
+    /* --- เพิ่มลายน้ำ (Watermark) ให้ฝั่งฟอร์ม --- */
+.login-form-side {
+  position: relative; /* เพื่อให้จัดตำแหน่งลายน้ำได้ */
+  /* ใช้รูปเกี่ยวกับการทำงาน/การเขียนหนังสือ */
+  background-color: #ffffff; 
+  overflow: hidden; /* ป้องกันภาพล้น */
+}
+
+
+
+/* ดันกล่องฟอร์มขึ้นมาอยู่เหนือลายน้ำ */
+.login-form-container {
+  position: relative;
+  z-index: 1; 
+  /* เพิ่มพื้นหลังขาวจางๆ หลังกล่องฟอร์มเพื่อให้ตัวหนังสือชัดเจนที่สุด (ถ้าต้องการ) */
+  /* background-color: rgba(255, 255, 255, 0.85); */
+  /* padding: 30px; */
+  /* border-radius: 20px; */
+}
+    /* --- New Login Split Screen Design --- */
+  .login-wrapper {
+    display: flex;
+    min-height: 100vh;
+    width: 100%;
+    background-color: #fff;
+    font-family: 'Sarabun', sans-serif;
+    overflow: hidden;
+  }
+
+.login-image-side {
+    flex: 1; /* เปลี่ยนเป็น 1 เพื่อให้รูปภาพยืดเต็มพื้นที่ที่เหลือทั้งหมด */
+    
+    /* URL รูปภาพของคุณ */
+    background-image: url('https://lh3.googleusercontent.com/d/1FxW8MP7fSNMPHR_Gwew7nCy9ZG9c5sEz'); 
+    background-size: cover;
+    background-position: center center;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end; /* ดันข้อความลงล่าง */
+    padding: 60px;
+    color: white;
+  }
+
+  /* สร้างเลเยอร์สีน้ำเงินทับรูปภาพ (Overlay) */
+  .login-image-side::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    
+    /* ปรับเฉดสีน้ำเงินตรงนี้ (rgba) ค่า 0.8 คือความทึบ (ปรับได้ 0.1-1.0) */
+    background: linear-gradient(to bottom, rgba(13, 71, 161, 0.6), rgba(13, 71, 161, 0.95));
+    
+    z-index: 1;
+  }
+
+  .login-image-text {
+    position: relative;
+    z-index: 2;
+    max-width: 600px;
+    animation: fadeInUp 0.8s ease-out;
+  }
+
+  .login-image-text h1 {
+    font-size: 3rem;
+    font-weight: 700;
+    margin-bottom: 15px;
+    line-height: 1.2;
+    text-shadow: 0 2px 10px rgba(0,0,0,0.3);
+  }
+
+  .login-image-text p {
+    font-size: 1.1rem;
+    opacity: 0.9;
+    line-height: 1.6;
+  }
+
+/* ฝั่งขวา: พื้นที่สีขาวของฟอร์ม */
+  .login-form-side {
+    /* ลบ flex: 0.8 ออก เพื่อไม่ให้มันกว้างตาม % หน้าจอ */
+    width: 100%;
+    max-width: 500px; /* ล็อกความกว้างฝั่งสีขาวไว้ที่ 500px ให้พอดีตัวฟอร์ม */
+    flex-shrink: 0; /* ป้องกันไม่ให้ฝั่งขวาหดตัว */
+    
+    display: flex;
+    flex-direction: column;
+    padding: 40px 30px;
+    background-color: #ffffff;
+    position: relative;
+    overflow-y: auto; /* ให้เลื่อนลงได้เมื่อมีประกาศยาวๆ */
+    max-height: 100vh;
+  }
+
+/* ตัวกล่องฟอร์มด้านใน */
+  .login-form-container {
+    width: 100%;
+    margin: auto 0; /* ดันให้อยู่กึ่งกลางแนวตั้งเสมออย่างปลอดภัย ป้องกันฟอร์มตกขอบบน */
+    animation: fadeIn 1s ease-out;
+  }
+  .login-header {
+    text-align: center;
+    margin-bottom: 30px;
+  }
+
+  .login-logo {
+    width: 80px;
+    height: auto;
+    margin-bottom: 15px;
+    filter: drop-shadow(0 4px 6px rgba(0,0,0,0.1));
+  }
+
+  .login-title {
+    font-size: 24px;
+    font-weight: 800;
+    color: #1e293b;
+    margin: 0;
+    border-bottom: none !important; /* เพิ่มบรรทัดนี้: ลบเส้นใต้ */
+    padding-bottom: 0 !important;   /* เพิ่มบรรทัดนี้: ลบระยะห่างเส้นใต้ */
+  }
+
+  .login-subtitle {
+    font-size: 14px;
+    color: #64748b;
+    margin-top: 5px;
+  }
+
+  /* Input Design */
+  .floating-input-group {
+    position: relative;
+    margin-bottom: 20px;
+  }
+
+  .floating-input {
+    width: 100%;
+    padding: 14px 16px;
+    padding-right: 40px;
+    border: 2px solid #e2e8f0;
+    border-radius: 10px;
+    font-size: 16px;
+    font-family: 'Sarabun', sans-serif;
+    outline: none;
+    transition: all 0.3s;
+    background: #f8fafc;
+    color: #334155;
+  }
+
+  .floating-input:focus {
+    border-color: #0d47a1;
+    background: #fff;
+    box-shadow: 0 0 0 4px rgba(13, 71, 161, 0.1);
+  }
+
+  /* Label ลอย */
+  .floating-label {
+    position: absolute;
+    left: 14px;
+    top: 50%;
+    transform: translateY(-50%);
+    background: transparent;
+    padding: 0 5px;
+    font-size: 14px;
+    color: #94a3b8;
+    pointer-events: none;
+    transition: all 0.2s;
+  }
+
+  .floating-input:focus ~ .floating-label,
+  .floating-input:not(:placeholder-shown) ~ .floating-label,
+  .floating-input:valid ~ .floating-label { /* เพิ่ม valid เพื่อรองรับ select */
+    top: 0;
+    font-size: 12px;
+    color: #0d47a1;
+    background: #fff;
+    font-weight: 600;
+  }
+
+  /* ปุ่ม Login/Signup */
+  .btn-login-new {
+    width: 100%;
+    padding: 14px;
+    background: linear-gradient(135deg, #0d47a1 0%, #1565c0 100%);
+    color: white;
+    border: none;
+    border-radius: 10px;
+    font-size: 16px;
+    font-weight: 700;
+    cursor: pointer;
+    box-shadow: 0 10px 20px rgba(13, 71, 161, 0.2);
+    transition: transform 0.2s, box-shadow 0.2s;
+    margin-top: 10px;
+  }
+
+  .btn-login-new:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 15px 30px rgba(13, 71, 161, 0.3);
+  }
+
+  /* ลิงก์ด้านล่าง */
+  .login-footer {
+    margin-top: 25px;
+    text-align: center;
+    font-size: 14px;
+    color: #64748b;
+  }
+
+  .login-footer a {
+    color: #0d47a1;
+    text-decoration: none;
+    font-weight: 700;
+  }
+
+  /* Grid สำหรับฟอร์มสมัครสมาชิก */
+  .signup-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 15px;
+  }
+  .full-width {
+    grid-column: span 2;
+  }
+
+/* Mobile Responsive */
+  @media (max-width: 900px) {
+    .login-wrapper { flex-direction: column; }
+    .login-image-side { display: none; }
+    .login-form-side { 
+        padding: 20px; 
+        max-width: 100%; /* คืนค่าให้เต็มจอในมือถือ */
+        min-height: 100vh; /* บังคับสูงเต็มจอ */
+    }
+    .signup-grid { grid-template-columns: 1fr; }
+    .full-width { grid-column: span 1; }
+  }
+
+  @keyframes fadeInUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+  @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+    /* --- ปรับปรุงโครงสร้างตาราง (แก้ปัญหาตารางเบี้ยว) --- */
+
+/* 1. บังคับโครงสร้างตารางให้คงที่ (สำคัญมาก!) */
+#recordDisbursementTable {
+    width: 100%;
+    table-layout: fixed; /* คำสั่งนี้จะบังคับให้ความกว้างคอลัมน์ไม่ดิ้นตามข้อความ */
+    border-collapse: separate;
+    border-spacing: 0;
+}
+
+/* 2. กำหนดความกว้างของแต่ละคอลัมน์ให้ชัดเจน */
+
+/* คอลัมน์ที่ 1: Checkbox (ให้กว้าง 50px เสมอ) */
+#recordDisbursementTable th:nth-child(1),
+#recordDisbursementTable td:nth-child(1) {
+    width: 50px;       /* ความกว้างตายตัว */
+    min-width: 50px;   /* ห้ามหดเล็กกว่านี้ */
+    max-width: 50px;   /* ห้ามขยายใหญ่กว่านี้ */
+    text-align: center;
+    vertical-align: middle;
+    padding: 10px 0;   /* ลด padding ด้านข้างเพื่อให้ checkbox อยู่กลางเป๊ะ */
+}
+
+/* คอลัมน์ที่ 2: ชื่องาน (ให้พื้นที่เยอะที่สุด) */
+#recordDisbursementTable th:nth-child(2),
+#recordDisbursementTable td:nth-child(2) {
+    width: 35%;
+    vertical-align: middle;
+}
+
+/* คอลัมน์ที่ 3: หน่วยงาน */
+#recordDisbursementTable th:nth-child(3),
+#recordDisbursementTable td:nth-child(3) {
+    width: 20%;
+    vertical-align: middle;
+}
+
+/* คอลัมน์ที่ 4: จำนวนรายการ */
+#recordDisbursementTable th:nth-child(4),
+#recordDisbursementTable td:nth-child(4) {
+    width: 10%;
+    text-align: center;
+    vertical-align: middle;
+}
+
+/* คอลัมน์ที่ 5: ยอดเงิน */
+#recordDisbursementTable th:nth-child(5),
+#recordDisbursementTable td:nth-child(5) {
+    width: 15%;
+    text-align: right;
+    vertical-align: middle;
+    font-weight: bold;
+    color: var(--secondary-color);
+}
+
+/* คอลัมน์ที่ 6: สถานะ (ความกว้างที่เหลือ) */
+#recordDisbursementTable th:nth-child(6),
+#recordDisbursementTable td:nth-child(6) {
+    width: auto; /* ให้กินพื้นที่ที่เหลือ */
+    text-align: center;
+    vertical-align: middle;
+}
+
+/* 3. จัดการการตัดคำ (เผื่อชื่องานยาวเกิน) */
+#recordDisbursementTable td {
+    white-space: normal; /* ให้ตัดบรรทัดได้ */
+    word-wrap: break-word; /* ตัดคำถ้ายาวเกินช่อง */
+    border-bottom: 1px solid #eee;
+    padding: 12px 10px;
+}
+    /* --- ปรับปรุงส่วน Filter Bar (แถบเลือกหน่วยงาน) --- */
+#recordActionArea {
+    background: linear-gradient(to right, #ffffff, #f8f9fa); /* พื้นหลังขาวไล่เทาอ่อน */
+    border: 1px solid #e2e8f0;
+    border-radius: 12px; /* มุมมน */
+    padding: 20px 25px;
+    box-shadow: 0 4px 6px rgba(0,0,0,0.02); /* เงาบางๆ */
+    display: flex;
+    align-items: center; /* จัดให้อยู่กึ่งกลางแนวนอน */
+    justify-content: space-between;
+    gap: 20px;
+    margin-bottom: 25px;
+}
+
+/* จัดกลุ่ม Label กับ Dropdown */
+#recordActionArea > div:first-child {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    flex: 1; /* ให้ขยายเต็มพื้นที่ */
+}
+
+/* ป้ายกำกับ "เลือกหน่วยงาน" */
+#recordActionArea label {
+    font-weight: 700;
+    color: #1e293b;
+    font-size: 15px;
+    white-space: nowrap;
+    margin: 0 !important;
+}
+
+/* ตัว Dropdown */
+#recordDeptFilter {
+    width: 100%;
+    max-width: 500px; /* จำกัดความกว้างไม่ให้ยาวเกินไป */
+    padding: 10px 15px;
+    border: 2px solid #cbd5e1;
+    border-radius: 8px;
+    font-size: 14px;
+    color: #334155;
+    background-color: #fff;
+    cursor: pointer;
+    transition: all 0.2s;
+    margin: 0 !important;
+}
+
+#recordDeptFilter:focus {
+    border-color: var(--secondary-color);
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(13, 71, 161, 0.1);
+}
+
+/* ปุ่มปิดบัญชี */
+#btnBulkClose {
+    padding: 10px 25px;
+    border-radius: 8px;
+    font-weight: 600;
+    font-size: 14px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    box-shadow: 0 4px 10px rgba(40, 167, 69, 0.2);
+    transition: transform 0.2s;
+}
+
+#btnBulkClose:hover:not(:disabled) {
+    transform: translateY(-2px);
+}
+    /* --- Footer Design Styles --- */
+.app-footer {
+    background-color: #fff;
+    border-top: 1px solid #e0e0e0; /* เส้นขอบด้านบน */
+    padding: 30px 40px;
+    margin-top: auto; /* ดัน Footer ลงล่างสุดเสมอ */
+    font-family: 'Sarabun', sans-serif;
+    box-shadow: 0 -2px 10px rgba(0,0,0,0.02);
+}
+
+.footer-container {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    max-width: 1400px;
+    margin: 0 auto;
+}
+
+/* คอลัมน์ทั่วไป */
+.footer-col {
+    flex: 1;
+    padding: 0 20px;
+    position: relative;
+}
+
+/* เส้นแบ่งระหว่างคอลัมน์ */
+.footer-col:not(:last-child)::after {
+    content: "";
+    position: absolute;
+    right: 0;
+    top: 10%;
+    height: 80%;
+    width: 1px;
+    background-color: #e0e0e0;
+}
+
+/* คอลัมน์ที่ 1: โลโก้และที่อยู่ */
+.logo-section {
+    display: flex;
+    align-items: flex-start;
+    gap: 15px;
+}
+.footer-logo img {
+    width: 60px;
+    height: auto;
+}
+.org-name {
+    font-size: 16px;
+    font-weight: bold;
+    color: #333;
+    margin-bottom: 5px;
+}
+.org-address {
+    font-size: 14px;
+    color: #666;
+    line-height: 1.5;
+}
+
+/* คอลัมน์ที่ 2: ข้อมูลติดต่อ (Email/Phone) */
+.contact-list {
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+}
+.contact-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+}
+.contact-item i {
+    font-size: 20px;
+    color: #333;
+    margin-top: 2px;
+}
+.contact-label {
+    font-size: 13px;
+    font-weight: 600;
+    color: #333;
+    display: block;
+}
+.contact-value {
+    font-size: 15px;
+    color: var(--secondary-color); /* สีน้ำเงินธีมหลัก */
+    font-weight: 600;
+    text-decoration: none;
+}
+.contact-sub {
+    font-size: 12px;
+    color: #888;
+    margin-left: 5px;
+}
+
+/* คอลัมน์ที่ 3: Line */
+.line-section {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+.line-icon {
+    width: 40px;
+    height: 40px;
+    /* ใช้ SVG ของ Line หรือรูปภาพ */
+    background-image: url('https://upload.wikimedia.org/wikipedia/commons/4/41/LINE_logo.svg');
+    background-size: cover;
+    border-radius: 8px;
+}
+
+/* Responsive: มือถือ */
+@media (max-width: 900px) {
+    .footer-container {
+        flex-direction: column;
+        gap: 30px;
+    }
+    .footer-col {
+        padding: 0;
+        border: none !important;
+    }
+    .footer-col::after {
+        display: none; /* ซ่อนเส้นแบ่งในมือถือ */
+    }
+}
+    /*................................... เพิ่มต่อจาก .btn-danger */
+.btn-warning {
+    background-color: #ffc107; /* สีเหลือง */
+    color: #000; /* ตัวหนังสือสีดำ */
+}
+.btn-warning:hover {
+    background-color: #e0a800; /* สีเหลืองเข้มตอนเอาเมาส์ชี้ */
+}
+/* [Block 3] CSS โหมดพิมพ์ทะเบียนประวัติ (Profile Print Mode) */
+@media print {
+    body.print-mode-profile #printProfileArea,
+    body.print-mode-profile #printProfileArea * {
+        visibility: visible !important;
+    }
+    body.print-mode-profile #printProfileArea {
+        position: absolute; 
+        left: 0; 
+        top: 0; 
+        width: 100%;
+        display: block !important;
+        background: white !important;
+        padding: 40px; 
+        margin: 0;
+        border: none !important;
+        box-shadow: none !important;
+        z-index: 9999;
+    }
+    /* ซ่อนหน้ารายงานอื่นๆ */
+    body.print-mode-profile #printTimeSheetArea, 
+    body.print-mode-profile #printArea,
+    body.print-mode-profile #printBudgetReportArea,
+    body.print-mode-profile .sidebar,
+    body.print-mode-profile .topbar,
+    body.print-mode-profile .section { 
+        display: none !important; 
+    }
+}
+    /* --- CSS สำหรับ Popup เลือกสิทธิ์แบบใหม่ --- */
+.role-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 15px;
+    margin-bottom: 20px;
+}
+
+.role-card {
+    background: #fff;
+    border: 2px solid #e0e0e0;
+    border-radius: 12px;
+    padding: 15px 10px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.2s ease-in-out;
+    position: relative;
+}
+
+.role-card:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+}
+
+.role-card.active {
+    border-color: var(--secondary-color);
+    background-color: #e3f2fd;
+}
+
+/* ไอคอนในการ์ด */
+.role-icon {
+    font-size: 40px;
+    margin-bottom: 10px;
+    color: #757575;
+}
+
+.role-card.active .role-icon {
+    color: var(--secondary-color);
+}
+
+/* ข้อความในการ์ด */
+.role-label {
+    font-size: 14px;
+    font-weight: 600;
+    color: #444;
+}
+
+.role-card.active .role-label {
+    color: var(--secondary-color);
+}
+
+/* เอฟเฟกต์เฉพาะการ์ดแต่ละประเภท */
+.role-card[data-role="admin"].active { border-color: #1e3a8a; background: #eef2ff; }
+.role-card[data-role="admin"].active .role-icon { color: #1e3a8a; }
+
+.role-card[data-role="unit"].active { border-color: #059669; background: #ecfdf5; }
+.role-card[data-role="unit"].active .role-icon { color: #059669; }
+
+.role-card[data-role="student"].active { border-color: #d97706; background: #fffbeb; }
+.role-card[data-role="student"].active .role-icon { color: #d97706; }
+
+/* Input Container */
+.input-transition-box {
+    background: #f8fafc;
+    border: 1px dashed #cbd5e1;
+    border-radius: 8px;
+    padding: 15px;
+    margin-top: 15px;
+    display: none; /* ซ่อนไว้ก่อน */
+    animation: fadeIn 0.3s ease-out;
+}
+    /* แถบแจ้งเตือนสถานะการสวมสิทธิ์ */
+#impersonation-bar {
+  display: none; /* ซ่อนไว้ก่อน */
+  background-color: #f97316; /* สีส้ม */
+  color: white;
+  text-align: center;
+  padding: 10px;
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  z-index: 9999;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+  font-family: 'Sarabun', sans-serif;
+}
+
+/* ปุ่มสำหรับ Admin กดเพื่อเปิดเมนู (วางไว้มุมขวาล่าง หรือใน Navbar ก็ได้) */
+.admin-floating-btn {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  background-color: #1e3a8a; /* สีน้ำเงินทางการ */
+  color: white;
+  padding: 12px 20px;
+  border-radius: 30px;
+  box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+  cursor: pointer;
+  z-index: 9990;
+  font-weight: bold;
+  transition: transform 0.2s;
+  display: none; /* <--- สำคัญ! ต้องซ่อนไว้ก่อน */
+}
+.admin-floating-btn:hover {
+  transform: scale(1.05);
+}
+    /* ปรับปรุง Card ให้กระชับขึ้น */
+#userDashboardSection .card {
+    border-radius: 12px; /* ความมนที่พอดี */
+    padding: 20px !important; /* ลดระยะห่างภายในให้ดูไม่โหวงเหวง */
+    margin-bottom: 20px;
+    border: 1px solid #e2e8f0;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+}
+
+/* ปรับปรุงโปรไฟล์ให้ดูเป็นสัดส่วน */
+.profile-summary {
+    display: flex;
+    align-items: center;
+    gap: 25px; /* ระยะห่างระหว่างไอคอนกับข้อมูล */
+    padding: 15px;
+    background-color: #f8fafc;
+    border-radius: 10px;
+}
+
+.profile-avatar-circle {
+    width: 65px; /* ปรับขนาดให้เล็กลงแต่ดูเด่น */
+    height: 65px;
+    background: #0d47a1;
+    color: white;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 32px;
+}
+
+.profile-details-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1.2fr; /* แบ่งคอลัมน์ให้ข้อมูลอยู่ระนาบเดียวกัน */
+    gap: 15px;
+    width: 100%;
+}
+
+.profile-info-item strong {
+    display: block;
+    font-size: 12px;
+    color: #64748b;
+    text-transform: uppercase;
+    margin-bottom: 2px;
+}
+
+.profile-info-item span {
+    font-size: 16px;
+    font-weight: 700;
+    color: #1e293b;
+}
+    
+    /* จัดกล่องลายเซ็นให้อยู่ซ้าย-ขวา */
+  .footer-signature {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 50px;
+    font-family: "Sarabun", sans-serif; /* หรือฟอนต์ที่ท่านใช้ */
+    line-height: 1.8;
+  }
+
+  .sign-box {
+    text-align: center;
+    width: 45%; /* ความกว้างของแต่ละก้อน */
+  }
+
+  /* คลาสสำหรับเส้นจุดไข่ปลา */
+  .dotted-line {
+    border-bottom: 1px dotted #000; /* สร้างจุดไข่ปลา */
+    display: inline-block;
+    height: 20px; /* ความสูงของบรรทัด */
+    margin-bottom: 5px;
+  }
+
+  /* กำหนดความกว้างเฉพาะจุดได้ที่นี่ */
+  .w-name { width: 220px; }      /* ความกว้างสำหรับชื่อ */
+  .w-position { width: 300px; }  /* ความกว้างสำหรับตำแหน่ง (ขยายตามที่ขอ) *
+    /* เพิ่ม CSS นี้ในส่วน <style> ของ index.html */
+
+/* จัดช่องไฟระหว่างบรรทัดในส่วนลงนามให้พอดีกับการเซ็น (สูงประมาณ 2.5 ซม. ทางสายตา) */
+.report-footer .clean-input-group {
+    margin-bottom: 2.5cm; /* เว้นระยะห่าง */
+}
+
+/* ปรับระยะห่างระหว่างคำ "ลงชื่อ" กับ เส้นจุดไข่ปลา */
+.report-footer span {
+    vertical-align: bottom;
+}
+    /* ซ่อนแผงควบคุมสีเหลืองเมื่อสั่งพิมพ์ */
+@media print {
+    #reportPreviewArea .form-grid, 
+    #reportPreviewArea button,
+    #reportPreviewArea h4,
+    #reportPreviewArea > div:first-child { 
+        display: none !important; 
+    }
+    
+    /* บังคับให้แสดงส่วนกระดาษ */
+    #printArea {
+        display: block !important;
+        padding: 0 !important;
+        margin: 0 !important;
+        box-shadow: none !important;
+        border: none !important;
+    }
+    
+    /* จัดระยะขอบกระดาษ */
+    @page {
+        margin: 1.5cm;
+        size: A4 portrait;
+    }
+}
+
+.finance-month-card {
+    background: #fff;
+    border: 1px solid #e0e0e0;
+    border-radius: 8px;
+    margin-bottom: 15px;
+    overflow: hidden;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.03);
+    transition: all 0.3s;
+}
+.finance-month-header {
+    background: #99d7f8;
+    padding: 15px 20px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    cursor: pointer;
+    border-bottom: 1px solid transparent;
+}
+.finance-month-header:hover {
+    background: #99d7f8;
+}
+.finance-month-header.expanded {
+    background: var(--secondary-color);
+    color: #fff;
+    border-bottom: 1px solid #ccc;
+}
+.finance-month-title {
+    font-size: 18px;
+    font-weight: bold;
+}
+.finance-month-total {
+    font-size: 16px;
+    font-weight: 600;
+}
+.finance-details {
+    display: none; /* ซ่อนไว้ก่อน */
+    padding: 0;
+    animation: fadeIn 0.3s;
+}
+.finance-details table {
+    width: 100%;
+    border-collapse: collapse;
+}
+.finance-details th {
+    background: #eee;
+    padding: 10px;
+    text-align: left;
+    font-size: 14px;
+    color: #555;
+}
+.finance-details td {
+    padding: 12px 10px;
+    border-bottom: 1px solid #eee;
+    font-size: 14px;
+    vertical-align: top;
+}
+.finance-details tr:last-child td {
+    border-bottom: none;
+}
+    /* เปลี่ยนเมาส์เป็นรูปมือเมื่อชี้ที่หัวข้อหลัก */
+.parent-row {
+    cursor: pointer;
+}
+
+/* เอฟเฟกต์เมื่อเอาเมาส์ชี้ที่หัวข้อหลัก */
+.parent-row:hover {
+    background-color: #bbdefb !important; /* สีฟ้าอ่อนเข้มขึ้นนิดนึง */
+}
+
+/* ไอคอนลูกศร */
+.toggle-icon {
+    display: inline-block;
+    vertical-align: middle;
+    margin-right: 5px;
+}
+
+    /* --- [ADD] CSS สำหรับตารางงบประมาณแบบมีลำดับชั้น และ Tabs --- */
+
+/* Tabs สำหรับเลือกประเภทงบ */
+.budget-tabs {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 20px;
+    border-bottom: 2px solid #eee;
+    padding-bottom: 10px;
+}
+
+.budget-tab-btn {
+    padding: 10px 20px;
+    border: none;
+    background: none;
+    font-size: 16px;
+    font-weight: 600;
+    color: #888;
+    cursor: pointer;
+    border-radius: 8px;
+    transition: all 0.3s;
+}
+
+.budget-tab-btn.active {
+    background: var(--secondary-color);
+    color: #fff;
+    box-shadow: 0 4px 10px rgba(13, 71, 161, 0.2);
+}
+
+/* ตารางแบบ Hierarchy */
+.parent-row {
+    background-color: #f8f9fa;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+.parent-row:hover {
+    background-color: #e2e6ea;
+}
+.parent-row td {
+    font-weight: bold;
+    color: var(--secondary-color);
+    border-bottom: 2px solid #dee2e6 !important;
+}
+
+.child-row {
+    display: none; /* ซ่อนก่อน */
+    background-color: #fff;
+    animation: fadeIn 0.3s;
+}
+.child-row.show {
+    display: table-row;
+}
+.child-row td:first-child {
+    padding-left: 40px; /* ย่อหน้าให้รู้ว่าเป็นลูก */
+    position: relative;
+}
+.child-row td:first-child::before {
+    content: '↳';
+    position: absolute;
+    left: 20px;
+    color: #ccc;
+}
+
+.toggle-icon {
+    display: inline-block;
+    transition: transform 0.3s;
+    vertical-align: middle;
+    margin-right: 5px;
+}
+.parent-row.expanded .toggle-icon {
+    transform: rotate(90deg);
+}
+    /* --- [UPDATE] CSS สำหรับหน้า Login และ Password Toggle --- */
+
+/* ปรับแต่งกล่อง Login ให้ดูทันสมัยขึ้น มีเงานุ่มนวล */
+.auth-box {
+    background: rgba(255, 255, 255, 0.95);
+    backdrop-filter: blur(10px); /* เอฟเฟกต์กระจก */
+    border-radius: 20px; /* มุมมนกว่าเดิม */
+    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.15);
+    border: 1px solid rgba(255, 255, 255, 0.5);
+    width: 100%;
+    max-width: 420px;
+    overflow: hidden;
+    position: relative;
+    animation: slideUp 0.6s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.auth-header-bg {
+    background: linear-gradient(135deg, #fdfbfb 0%, #ebedee 100%);
+    padding: 40px 30px 20px;
+    text-align: center;
+    border-bottom: none;
+}
+
+.auth-logo img {
+    filter: drop-shadow(0 4px 6px rgba(0,0,0,0.1));
+    transition: transform 0.3s;
+}
+.auth-logo img:hover {
+    transform: scale(1.05);
+}
+
+/* ปรับ Input Group ให้รองรับไอคอนซ้อนด้านใน */
+.modern-input-group {
+    position: relative;
+    margin-bottom: 25px;
+}
+
+.modern-input-group label {
+    font-size: 14px;
+    color: #495057;
+    font-weight: 600;
+    margin-bottom: 8px;
+    display: block;
+}
+
+.input-wrapper {
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+
+.modern-input-group input {
+    width: 100%;
+    padding: 14px 16px;
+    padding-right: 45px; /* เว้นที่ทางขวาให้ไอคอนลูกตา */
+    border: 2px solid #e9ecef;
+    border-radius: 12px;
+    font-size: 16px;
+    background: #f8f9fa;
+    transition: all 0.3s ease;
+    font-family: 'Sarabun', sans-serif;
+}
+
+.modern-input-group input:focus {
+    background: #fff;
+    border-color: var(--secondary-color);
+    box-shadow: 0 0 0 4px rgba(13, 71, 161, 0.1);
+    outline: none;
+}
+
+/* ไอคอนลูกตา (Toggle Password) */
+.toggle-password {
+    position: absolute;
+    right: 15px;
+    cursor: pointer;
+    color: #adb5bd;
+    font-size: 20px;
+    user-select: none;
+    transition: color 0.2s;
+}
+
+.toggle-password:hover {
+    color: var(--secondary-color);
+}
+
+/* ปุ่ม Login ให้สวยขึ้น */
+.btn-login-modern {
+    background: linear-gradient(90deg, var(--secondary-color) 0%, var(--accent-color) 100%);
+    color: #fff;
+    border: none;
+    width: 100%;
+    padding: 14px;
+    font-size: 16px;
+    font-weight: 600;
+    border-radius: 50px;
+    cursor: pointer;
+    box-shadow: 0 10px 20px rgba(13, 71, 161, 0.2);
+    transition: all 0.3s;
+}
+
+.btn-login-modern:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 15px 30px rgba(13, 71, 161, 0.3);
+}
+/* --- CSS สำหรับการพิมพ์ (กำหนดฟอนต์ TH-Sarabun-PSK 14px ทุกรายงาน) --- */
+@media print {
+    /* 1. ซ่อนทุกอย่างและเคลียร์พื้นหลัง */
+    body {
+        visibility: hidden;
+        background-color: white !important;
+        margin: 0;
+        padding: 0;
+        -webkit-print-color-adjust: exact;
+    }
+    
+    /* 2. ซ่อน UI ระบบ */
+    .sidebar, .topbar, .btn, .modal, .section, #customLoader, .no-print {
+        display: none !important;
+    }
+
+    /* ================================================================== */
+    /* ตั้งค่า Font และ Size กลาง (ใช้ร่วมกันทุกรายงาน)                   */
+    /* ================================================================== */
+    .paper-sheet, .report-table th, .report-table td, 
+    #printTimeSheetArea, #printArea, #printBudgetReportArea {
+        /* กำหนดชื่อฟอนต์ตามที่ต้องการ (ใส่สำรองไว้เผื่อ Browser หาไม่เจอ) */
+        font-family: 'TH Sarabun PSK', 'TH-Sarabun-PSK', 'Sarabun', sans-serif !important;
+        /* กำหนดขนาด 14px ตามที่ระบุ */
+        font-size: 14px !important;
+        color: #000 !important;
+        line-height: 1.4 !important; /* จัดระยะบรรทัดให้อ่านง่าย */
+    }
+
+    /* ================================================================== */
+    /* โหมด A: ใบลงเวลา (TimeSheet)                                     */
+    /* ================================================================== */
+    body.print-mode-timesheet #printTimeSheetArea,
+    body.print-mode-timesheet #printTimeSheetArea * {
+        visibility: visible !important;
+    }
+    body.print-mode-timesheet #printTimeSheetArea {
+        position: absolute; left: 0; top: 0; width: 100%;
+        display: block !important;
+        background: white !important;
+        padding: 20px 40px; margin: 0;
+        border: none !important;
+        box-shadow: none !important;
+    }
+    /* ซ่อนอันอื่น */
+    body.print-mode-timesheet #printArea, 
+    body.print-mode-timesheet #printBudgetReportArea { display: none !important; }
+
+
+    /* ================================================================== */
+    /* โหมด B: รายงานการเงิน (Finance)                                  */
+    /* ================================================================== */
+    body.print-mode-finance #printArea,
+    body.print-mode-finance #printArea * {
+        visibility: visible !important;
+    }
+    body.print-mode-finance #printArea {
+        position: absolute; left: 0; top: 0; width: 100%;
+        display: block !important;
+        background: white !important;
+        padding: 20px; margin: 0;
+        border: none !important;
+        box-shadow: none !important;
+        z-index: 9999;
+    }
+    /* ซ่อนอันอื่น */
+    body.print-mode-finance #printTimeSheetArea, 
+    body.print-mode-finance #printBudgetReportArea { display: none !important; }
+
+
+    /* ================================================================== */
+    /* โหมด C: รายงานงบประมาณ (Budget)                                  */
+    /* ================================================================== */
+    body.print-mode-budget #printBudgetReportArea,
+    body.print-mode-budget #printBudgetReportArea * {
+        visibility: visible !important;
+    }
+    body.print-mode-budget #printBudgetReportArea {
+        position: absolute; left: 0; top: 0; width: 100%;
+        display: block !important;
+        background: white !important;
+        padding: 40px; margin: 0;
+        border: none !important;
+        box-shadow: none !important;
+        z-index: 9999;
+    }
+    /* ซ่อนอันอื่น */
+    body.print-mode-budget #printTimeSheetArea, 
+    body.print-mode-budget #printArea { display: none !important; }
+
+
+    /* ================================================================== */
+    /* จัด Style ตาราง (ใช้ร่วมกัน)                                       */
+    /* ================================================================== */
+    .report-table { 
+        width: 100%; 
+        border-collapse: collapse !important; 
+        margin-top: 10px; 
+    }
+    .report-table th, .report-table td {
+        border: 1px solid #000 !important; /* เส้นตารางสีดำ */
+        padding: 6px 8px !important;       /* ปรับระยะห่างในช่อง */
+        vertical-align: top;
+        background-color: transparent !important;
+    }
+    
+    /* ลบพื้นหลังของ Div ที่ครอบตาราง */
+    .paper-sheet, .card, .section {
+        background: white !important;
+        box-shadow: none !important;
+        border: none !important;
+    }
+}
+
+
+    /* --- New Verify Student Profile Design --- */
+.vf-profile-header {
+    background: #fff;
+    border-radius: 12px;
+    padding: 30px;
+    display: flex;
+    align-items: center;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.05);
+    margin-bottom: 25px;
+    border-left: 6px solid var(--secondary-color);
+    position: relative;
+    overflow: hidden;
+}
+
+.vf-avatar {
+    width: 80px;
+    height: 80px;
+    background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%);
+    color: var(--secondary-color);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 40px;
+    margin-right: 25px;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+}
+
+.vf-info h3 {
+    margin: 0 0 5px 0;
+    font-size: 24px;
+    color: #333;
+}
+
+.vf-info p {
+    margin: 0;
+    color: #666;
+    font-size: 16px;
+}
+
+.vf-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+    gap: 20px;
+}
+
+.vf-card {
+    background: #fff;
+    border-radius: 12px;
+    padding: 25px;
+    box-shadow: 0 2px 15px rgba(0,0,0,0.03);
+    border: 1px solid #f0f0f0;
+    height: 100%;
+}
+
+.vf-card-title {
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--secondary-color);
+    margin-bottom: 20px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid #eee;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.vf-list-item {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 12px;
+    font-size: 15px;
+}
+
+.vf-label { color: #888; font-weight: 500; }
+.vf-value { color: #333; font-weight: 600; text-align: right; max-width: 60%; }
+
+.vf-badge {
+    padding: 4px 10px;
+    border-radius: 20px;
+    font-size: 13px;
+    font-weight: 600;
+}
+.vf-badge-green { background: #e8f5e9; color: #2e7d32; }
+.vf-badge-blue { background: #e3f2fd; color: #1565c0; }
+.vf-badge-orange { background: #fff3e0; color: #ef6c00; }
+
+.vf-full-card {
+    grid-column: 1 / -1;
+    background: linear-gradient(to right, #ffffff, #fdfdfd);
+}
+
+.vf-skill-box {
+    background: #f8f9fa;
+    padding: 15px;
+    border-radius: 8px;
+    margin-top: 10px;
+    border-left: 4px solid #17a2b8;
+}
+
+/* Mobile Responsive */
+@media (max-width: 768px) {
+    .vf-profile-header { flex-direction: column; text-align: center; }
+    .vf-avatar { margin: 0 0 15px 0; }
+    .vf-list-item { flex-direction: column; text-align: left; }
+    .vf-value { text-align: left; max-width: 100%; margin-top: 2px; }
+}
+
+    /* --- Special Payroll Modern Design --- */
+
+/* 1. กล่องค้นหา (Search Hero) */
+.sp-search-container {
+    background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+    padding: 30px;
+    border-radius: 12px;
+    text-align: center;
+    margin-bottom: 25px;
+    box-shadow: inset 0 2px 5px rgba(0,0,0,0.05);
+}
+
+.sp-search-box {
+    display: flex;
+    max-width: 500px;
+    margin: 15px auto 0;
+    position: relative;
+    box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+    border-radius: 50px;
+    background: #fff;
+    overflow: hidden;
+}
+
+.sp-search-input {
+    flex: 1;
+    border: none;
+    padding: 15px 20px;
+    font-size: 16px;
+    outline: none;
+    font-family: 'Sarabun', sans-serif;
+}
+
+.sp-search-btn {
+    background: var(--secondary-color);
+    color: #fff;
+    border: none;
+    padding: 0 25px;
+    cursor: pointer;
+    transition: background 0.2s;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.sp-search-btn:hover {
+    background: #1565c0;
+}
+
+/* 2. การ์ดข้อมูลนักศึกษา (Profile Badge) */
+.sp-profile-badge {
+    display: flex;
+    align-items: center;
+    background: #fff;
+    border: 1px solid #e0e0e0;
+    border-left: 5px solid var(--secondary-color);
+    padding: 20px;
+    border-radius: 8px;
+    margin-bottom: 20px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+    animation: slideDown 0.4s ease-out;
+}
+
+.sp-profile-icon {
+    width: 60px;
+    height: 60px;
+    background: #e3f2fd;
+    color: var(--secondary-color);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-right: 20px;
+    font-size: 30px;
+}
+
+.sp-profile-info h3 {
+    margin: 0 0 5px 0;
+    font-size: 18px;
+    color: #333;
+}
+
+.sp-profile-info p {
+    margin: 0;
+    color: #666;
+    font-size: 14px;
+}
+
+/* 3. ตารางลงเวลา (Work Table) */
+.sp-table-wrapper {
+    background: #fff;
+    border-radius: 8px;
+    border: 1px solid #eee;
+    overflow: hidden;
+    margin-top: 15px;
+}
+
+.sp-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.sp-table th {
+    background: #f8f9fa;
+    color: #555;
+    font-weight: 600;
+    padding: 12px 15px;
+    text-align: left;
+    border-bottom: 2px solid #eee;
+}
+
+.sp-table td {
+    padding: 10px 15px;
+    border-bottom: 1px solid #f0f0f0;
+    vertical-align: middle;
+}
+
+.sp-input-date, .sp-select-session {
+    width: 100%;
+    padding: 8px 10px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-family: 'Sarabun', sans-serif;
+    transition: border-color 0.2s;
+}
+
+.sp-input-date:focus, .sp-select-session:focus {
+    border-color: var(--secondary-color);
+    outline: none;
+}
+
+.sp-price-tag {
+    font-weight: bold;
+    color: var(--secondary-color);
+    background: #e3f2fd;
+    padding: 4px 10px;
+    border-radius: 20px;
+    font-size: 13px;
+}
+
+/* 4. ส่วนสรุปยอด (Summary Footer) */
+.sp-footer {
+    background: #fafafa;
+    padding: 20px;
+    border-radius: 0 0 8px 8px;
+    border-top: 2px solid #eee;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: -5px; /* ติดกับตาราง */
+}
+
+.sp-total-label {
+    font-size: 16px;
+    color: #555;
+}
+
+.sp-total-amount {
+    font-size: 28px;
+    font-weight: 800;
+    color: var(--success-color);
+}
+
+@keyframes slideDown {
+    from { opacity: 0; transform: translateY(-10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+    /* --- New Modern Job Grid Design --- */
+
+/* คอนเทนเนอร์จัดเรียงแบบ Grid (สวยงามทุกหน้าจอ) */
+.job-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); /* ปรับขนาดอัตโนมัติ */
+    gap: 25px;
+    padding-bottom: 40px;
+}
+
+/* ตัวการ์ดงาน */
+.modern-job-card {
+    background: #fff;
+    border-radius: 16px;
+    border: 1px solid #f0f0f0;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.03);
+    transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    position: relative;
+    height: 100%; /* ให้การ์ดสูงเท่ากันในแถว */
+}
+
+.modern-job-card:hover {
+    transform: translateY(-7px);
+    box-shadow: 0 15px 35px rgba(0,0,0,0.1);
+    border-color: var(--accent-color);
+}
+
+/* แถบสีด้านบนการ์ด */
+.card-top-accent {
+    height: 6px;
+    width: 100%;
+    background: linear-gradient(90deg, var(--secondary-color), var(--accent-color));
+}
+
+/* ส่วนเนื้อหาการ์ด */
+.card-content {
+    padding: 25px;
+    flex-grow: 1;
+    display: flex;
+    flex-direction: column;
+}
+
+/* ป้ายสถานะมุมขวาบน */
+.status-pill {
+    position: absolute;
+    top: 20px;
+    right: 20px;
+    padding: 6px 12px;
+    border-radius: 30px;
+    font-size: 12px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+.pill-open { background: #e8f5e9; color: #2e7d32; }
+.pill-full { background: #ffebee; color: #c62828; }
+
+/* ข้อมูลหน่วยงาน */
+.agency-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 13px;
+    color: #666;
+    margin-bottom: 10px;
+    background: #f5f5f5;
+    padding: 4px 10px;
+    border-radius: 6px;
+    width: fit-content;
+}
+
+/* หัวข้อ */
+.modern-title {
+    font-size: 18px;
+    font-weight: 700;
+    color: #2c3e50;
+    margin: 0 0 12px 0;
+    line-height: 1.5;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+/* รายละเอียด */
+.modern-desc {
+    font-size: 14px;
+    color: #7f8c8d;
+    line-height: 1.6;
+    margin-bottom: 20px;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    flex-grow: 1;
+}
+
+/* ส่วนล่างของการ์ด */
+.card-footer {
+    padding: 15px 25px;
+    background: #fafafa;
+    border-top: 1px solid #eee;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+/* ข้อมูลวันที่และโควต้า */
+.meta-info {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+.date-text { font-size: 14px; font-weight: 600; color: #333; }
+.quota-text { font-size: 12px; color: #888; }
+
+/* ปุ่มสมัคร */
+.btn-apply-modern {
+    padding: 10px 24px;
+    border-radius: 50px;
+    font-size: 14px;
+    font-weight: 600;
+    border: none;
+    cursor: pointer;
+    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+.btn-apply-modern.active {
+    background: var(--secondary-color);
+    color: #fff;
+    box-shadow: 0 4px 10px rgba(13, 71, 161, 0.25);
+}
+.btn-apply-modern.active:hover {
+    background: #1565c0;
+    transform: scale(1.05);
+}
+.btn-apply-modern.disabled {
+    background: #e0e0e0;
+    color: #a0a0a0;
+    cursor: not-allowed;
+}
+
+/* Mobile Responsive */
+@media (max-width: 768px) {
+    .job-grid { grid-template-columns: 1fr; }
+}
+/* --- Styles for Financial Report --- */
+.paper-sheet {
+    background: #fff;
+    padding: 40px;
+    border: 1px solid #ccc;
+    box-shadow: 0 0 10px rgba(0,0,0,0.1);
+    min-height: 800px; /* A4 height approx */
+    font-family: 'Sarabun', sans-serif;
+}
+
+.report-header {
+    text-align: center;
+    margin-bottom: 30px;
+}
+.report-header h3, .report-header h4 {
+    margin: 5px 0;
+    color: #000;
+    font-weight: bold;
+}
+.report-subtitle {
+    margin-top: 15px;
+    text-align: left;
+    font-size: 16px;
+    font-weight: bold;
+    color: #333;
+}
+
+.report-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 20px;
+    font-size: 14px;
+}
+.report-table th, .report-table td {
+    border: 1px solid #000; /* เส้นตารางสีดำเข้มแบบราชการ */
+    padding: 8px;
+    color: #000;
+}
+.report-table th {
+    background-color: #f8f9fa;
+    text-align: center;
+    font-weight: bold;
+}
+.report-table td {
+    vertical-align: middle;
+}
+
+/* 1. Profile Summary Card (Modernized) */
+.profile-summary {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 20px;
+    background: #f8f9fa;
+    padding: 20px;
+    border-radius: 10px;
+    border: 1px solid #e0e0e0;
+}
+
+.profile-info-item {
+    padding: 10px 0;
+    border-bottom: 1px dashed #eee; /* เส้นแบ่งข้อมูลใน Grid */
+}
+
+.profile-info-item:last-child {
+    border-bottom: none;
+}
+
+.profile-info-item strong {
+    display: block;
+    font-size: 14px;
+    color: #666;
+    margin-bottom: 3px;
+}
+
+.profile-info-item span {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--secondary-color);
+}
+
+/* 2. Registrations List (Mobile-First Card View) */
+.mobile-reg-list {
+    display: none; /* ซ่อนไว้ก่อน (แสดงเฉพาะใน @media max-width: 768px) */
+    padding-top: 10px;
+}
+
+.reg-list-item {
+    background: #fff;
+    border: 1px solid #e0e0e0;
+    border-radius: 8px;
+    padding: 15px;
+    margin-bottom: 15px;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.05);
+    transition: all 0.2s;
+}
+
+.reg-list-item:hover {
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+}
+
+.reg-job-title {
+    font-size: 18px;
+    font-weight: 700;
+    color: #333;
+    margin-bottom: 5px;
+}
+
+.reg-job-detail {
+    font-size: 14px;
+    color: #666;
+    margin-bottom: 10px;
+    display: flex;
+    justify-content: space-between;
+}
+
+.reg-status-badge {
+    display: inline-block;
+    padding: 5px 10px;
+    border-radius: 20px;
+    font-weight: 600;
+    font-size: 13px;
+    white-space: nowrap;
+}
+
+/* Status Colors */
+.status-pending {
+    background-color: #fff8e1;
+    color: #ffb300;
+}
+
+.status-confirmed {
+    background-color: #e8f5e9;
+    color: var(--success-color);
+}
+
+.status-cancelled {
+    background-color: #fce4ec;
+    color: var(--danger-color);
+}
+
+/* Responsive Logic: Hide Desktop Table / Show Mobile List */
+@media (max-width: 768px) {
+    /* ซ่อนตารางปกติบน Mobile */
+    #userRegistrationsTable {
+        display: none;
+    }
+
+    /* แสดงรายการแบบ Card บน Mobile */
+    .mobile-reg-list {
+        display: block;
+    }
+    
+    /* ปรับปรุง Card */
+    .card {
+        padding: 20px;
+        border-left: 4px solid var(--secondary-color); /* ลดขนาดเส้นซ้าย */
+    }
+}
+
+/* ค้นหาคลาสนี้ .admin-stat-grid แล้วแก้ค่า minmax */
+
+.admin-stat-grid {
+    display: grid;
+    /* แก้ไขตรงนี้: เปลี่ยนจาก 240px เป็น 350px หรือ 400px */
+    /* เพื่อให้แถวนึงแสดงแค่ 3-4 ใบ แล้วปัดตกบรรทัด */
+    grid-template-columns: repeat(auto-fit, minmax(350px, 1fr)); 
+    
+    gap: 20px; /* ระยะห่างระหว่างการ์ด */
+    margin-top: 20px;
+}
+
+.stat-card {
+    background: #fff;
+    border-radius: 12px;
+    padding: 25px;
+    color: #fff;
+    position: relative;
+    overflow: hidden;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+    transition: transform 0.3s ease;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    min-height: 140px;
+}
+
+.stat-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 8px 25px rgba(0,0,0,0.15);
+}
+
+.stat-card .icon-bg {
+    position: absolute;
+    right: -10px;
+    bottom: -10px;
+    font-size: 100px;
+    opacity: 0.15;
+    color: #fff;
+    pointer-events: none;
+}
+
+.stat-title {
+    font-size: 16px;
+    font-weight: 500;
+    opacity: 0.9;
+    margin-bottom: 10px;
+}
+
+.stat-value {
+    font-size: 32px;
+    font-weight: 700;
+    font-family: 'Sarabun', sans-serif;
+    margin-bottom: 5px;
+}
+
+.stat-desc {
+    font-size: 13px;
+    opacity: 0.8;
+}
+
+/* Gradients for each card type */
+.bg-gradient-blue { background: linear-gradient(135deg, #0d47a1 0%, #42a5f5 100%); }
+.bg-gradient-green { background: linear-gradient(135deg, #1b5e20 0%, #66bb6a 100%); }
+.bg-gradient-orange { background: linear-gradient(135deg, #e65100 0%, #ffa726 100%); }
+.bg-gradient-teal { background: linear-gradient(135deg, #00695c 0%, #26a69a 100%); }
+.bg-gradient-red { background: linear-gradient(135deg, #d32f2f 0%, #ff5252 100%); }
+.bg-gradient-purple { background: linear-gradient(135deg, #6a1b9a 0%, #ab47bc 100%); }
+/* เพิ่มต่อจาก Gradient เดิม */
+.bg-gradient-pink { 
+    background: linear-gradient(135deg, #e91e63 0%, #f48fb1 100%); 
+    color: white;
+}
+.bg-gradient-dark-yellow { 
+    background: linear-gradient(135deg, #f57f17 0%, #fbc02d 100%); 
+    color: white;
+}
+/* เพิ่มต่อจาก Gradient เดิม */
+.bg-gradient-cyan { 
+    background: linear-gradient(135deg, #00acc1 0%, #26c6da 100%); 
+    color: white;
+}
+
+    /* --- แก้ไขให้ Popup แจ้งเตือนแสดงทับ Modal ทุกตัว --- */
+.swal2-container {
+    z-index: 3000 !important; /* ค่านี้ต้องมากกว่า .modal (ซึ่งเดิมคือ 2000) */
+}
+    /* --- CSS สำหรับตารางรายงานเบิกจ่าย (Disbursed Table Styling) --- */
+#disbursedTable {
+    border: 1px solid #e0e0e0;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.02);
+}
+
+#disbursedTable th {
+    background-color: #f8f9fa; /* สีหัวตารางเทาอ่อนแบบทางการ */
+    color: #444;
+    font-weight: 600;
+    text-align: center; /* จัดหัวตารางกึ่งกลาง */
+    white-space: nowrap; /* ห้ามหัวข้อตัดบรรทัด */
+    border-bottom: 2px solid #0d47a1; /* เส้นใต้สีน้ำเงินธีมหลัก */
+}
+
+#disbursedTable td {
+    vertical-align: middle; /* จัดให้อยู่กึ่งกลางแนวตั้ง */
+    padding: 12px 15px;
+}
+
+/* ดีไซน์ป้ายสถานะใหม่ (แก้ปัญหาคำตกบรรทัด) */
+.badge-status-paid {
+    background-color: #e8f5e9;
+    color: #2e7d32;
+    padding: 6px 12px;
+    border-radius: 50px; /* ทรงแคปซูล */
+    font-size: 12px;
+    font-weight: 700;
+    border: 1px solid #c8e6c9;
+    display: inline-block;
+    white-space: nowrap; /* สำคัญ! ห้ามตัดคำ */
+    min-width: 80px;
+    text-align: center;
+}
+
+/* คลาสจัดตำแหน่ง */
+.text-center { text-align: center; }
+.text-right { text-align: right; }
+.font-weight-bold { font-weight: 600; }
+
+    @media (max-width: 768px) {
+      .sidebar { margin-left: -260px; }
+      .sidebar.active { margin-left: 0; }
+      .main-content-wrapper { margin-left: 0 !important; } /* ตรงนี้ถูกต้อง */
+      .paper-body { padding: 20px; }
+    }
+
+    /* --- CSS ส่วนที่เพิ่มใหม่ (Budget Cards & Payroll) --- */
+    .budget-card-container { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px; margin-bottom: 20px; }
+    .budget-box { background: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); text-align: center; border-left: 5px solid #ccc; }
+    .budget-box.total { border-color: #0d47a1; }
+    .budget-box.used { border-color: #ff9800; }
+    .budget-box.balance { border-color: #28a745; }
+    
+    .payroll-list-item { background: #fff; border: 1px solid #eee; padding: 15px; margin-bottom: 10px; border-radius: 6px; display: flex; justify-content: space-between; align-items: center; }
+    .payroll-list-item:hover { box-shadow: 0 4px 10px rgba(0,0,0,0.05); }
+
+    /* --- Pagination Styles --- */
+    .pagination-container {
+        display: flex;
+        justify-content: flex-end;
+        align-items: center;
+        margin-top: 20px;
+        gap: 5px;
+    }
+    
+    .page-btn {
+        background: #fff;
+        border: 1px solid #dee2e6;
+        color: var(--secondary-color);
+        padding: 6px 12px;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 14px;
+        transition: all 0.2s;
+    }
+    
+    .page-btn:hover:not(:disabled) {
+        background-color: #e9ecef;
+        border-color: #dee2e6;
+    }
+    
+    .page-btn.active {
+        background-color: var(--secondary-color);
+        color: #fff;
+        border-color: var(--secondary-color);
+    }
+    
+    .page-btn:disabled {
+        color: #6c757d;
+        pointer-events: none;
+        background-color: #fff;
+        border-color: #dee2e6;
+    }
+    
+    .page-info {
+        margin-right: 10px;
+        font-size: 14px;
+        color: #666;
+    }
+    
+    /* --- Registration Master-Detail & Tabs --- */
+    .reg-master-view, .reg-detail-view {
+        transition: all 0.3s ease;
+    }
+    
+    /* Header ของหน้า Detail */
+    .detail-header {
+        display: flex;
+        align-items: center;
+        margin-bottom: 20px;
+        padding-bottom: 15px;
+        border-bottom: 1px solid #eee;
+    }
+    
+    /* Tab Menu Design */
+    .reg-tab-container {
+        display: flex;
+        gap: 10px;
+        margin-bottom: 20px;
+        background: #f1f3f5;
+        padding: 5px;
+        border-radius: 8px;
+        width: fit-content;
+        flex-wrap: wrap; /* รองรับมือถือ */
+    }
+    
+    .reg-tab-btn {
+        padding: 10px 20px;
+        border: none;
+        background: transparent;
+        cursor: pointer;
+        font-family: 'Sarabun', sans-serif;
+        font-weight: 600;
+        color: #666;
+        border-radius: 6px;
+        transition: all 0.2s;
+        display: flex;
+        align-items: center;
+        gap: 5px;
+    }
+    
+    .reg-tab-btn:hover {
+        background: rgba(255,255,255,0.5);
+        color: #333;
+    }
+    
+    .reg-tab-btn.active {
+        background: #fff;
+        color: var(--secondary-color);
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+
+    .badge-count {
+        background: #eee;
+        padding: 2px 8px;
+        border-radius: 12px;
+        font-size: 12px;
+        color: #555;
+    }
+    .active .badge-count {
+        background: var(--secondary-color);
+        color: #fff;
+    }
+    
+    /* --- 1. Global Variables & Reset --- */
+    :root {
+      --sidebar-bg: #212529;
+      --sidebar-text: #ecf0f1;
+      --sidebar-hover: #343a40;
+      --topbar-bg: #ffffff;
+      --body-bg: #f4f6f9;
+      --primary-color: #343a40; 
+      --secondary-color: #0d47a1; /* สีน้ำเงินเข้ม */
+      --accent-color: #1976D2;    /* สีฟ้า */
+      --success-color: #28a745;
+      --danger-color: #dc3545;
+      --warning-color: #ffc107;
+      --text-color: #333;
+      --border-color: #dee2e6;
+      --sidebar-width: 260px;
+      --sidebar-width-collapsed: 60px;
+      --topbar-height: 60px;
+      --transition-speed: 0.3s;
+    }
+
+    body {
+      font-family: 'Sarabun', sans-serif;
+      margin: 0;
+      padding: 0;
+      background-color: var(--body-bg);
+      color: var(--text-color);
+      overflow-x: hidden;
+    }
+
+    * { box-sizing: border-box; }
+    a { text-decoration: none; color: var(--accent-color); }
+
+    /* --- Custom Loading Overlay (Blue Box Style) --- */
+    #customLoader {
+      display: none;
+      position: fixed;
+      z-index: 9999;
+      left: 0;
+      top: 0;
+      width: 100%;
+      height: 100%;
+      background-color: rgba(0, 0, 0, 0.4);
+      backdrop-filter: blur(2px);
+      justify-content: center;
+      align-items: center;
+    }
+
+    .loader-box {
+      background-color: #1976D2;
+      color: #fff;
+      padding: 20px;
+      border-radius: 8px;
+      box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+      width: 300px;
+      text-align: center;
+      font-family: 'Sarabun', sans-serif;
+      position: relative;
+    }
+
+    .loader-text {
+      font-size: 16px;
+      font-weight: 500;
+      margin-bottom: 15px;
+      text-align: center;
+    }
+
+    .loader-track {
+      width: 100%;
+      height: 5px;
+      background-color: rgba(255, 255, 255, 0.3);
+      border-radius: 3px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .loader-bar {
+      position: absolute;
+      height: 100%;
+      width: 30%;
+      background-color: #fff;
+      border-radius: 3px;
+      animation: indeterminate 1.5s infinite ease-in-out;
+    }
+
+    @keyframes indeterminate {
+      0% { left: -30%; }
+      50% { left: 40%; width: 50%; }
+      100% { left: 100%; width: 30%; }
+    }
+
+    /* --- 2. Login / Signup Layout --- */
+    .auth-container {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      background: linear-gradient(135deg, #0d47a1 0%, #1976D2 100%);
+      padding: 20px;
+    }
+
+    .auth-box {
+      background: #ffffff;
+      border-radius: 12px;
+      box-shadow: 0 15px 35px rgba(0, 0, 0, 0.2);
+      width: 100%;
+      max-width: 450px;
+      overflow: hidden;
+      position: relative;
+      animation: slideUp 0.5s ease-out;
+    }
+
+    .auth-header-bg {
+      background-color: #f8f9fa;
+      padding: 30px 20px 20px 20px;
+      text-align: center;
+      border-bottom: 1px solid #e0e0e0;
+    }
+
+    .auth-logo {
+      font-size: 50px;
+      color: var(--secondary-color);
+      margin-bottom: 10px;
+      display: inline-block;
+      background: #fff;
+      border-radius: 50%;
+      padding: 10px;
+      box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+    }
+
+    .auth-title { font-size: 22px; font-weight: 700; color: #333; margin: 0; }
+    .auth-subtitle { font-size: 14px; color: #666; margin-top: 5px; }
+    .auth-body { padding: 30px; }
+
+    /* Modern Inputs */
+    .modern-input-group { position: relative; margin-bottom: 20px; }
+    .modern-input-group label { font-size: 14px; color: #555; font-weight: 600; margin-bottom: 8px; display: block; }
+    .modern-input-group input, .modern-input-group select {
+      width: 100%; padding: 12px 15px; border: 1px solid #ddd; border-radius: 8px; font-size: 16px; background: #f9f9f9; transition: all 0.3s;
+    }
+    .modern-input-group input:focus, .modern-input-group select:focus {
+      background: #fff; border-color: var(--secondary-color); box-shadow: 0 0 0 4px rgba(26, 35, 126, 0.1); outline: none;
+    }
+    @keyframes slideUp { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+
+    /* --- 3. Dashboard Layout --- */
+    .app-wrapper { display: flex; min-height: 100vh; }
+    .sidebar {
+      width: var(--sidebar-width); background-color: var(--sidebar-bg); color: var(--sidebar-text);
+      display: flex; flex-direction: column; position: fixed; top: 0; left: 0; height: 100%;
+      transition: width var(--transition-speed); z-index: 1000; overflow-y: auto;
+    }
+    .sidebar.collapsed { width: var(--sidebar-width-collapsed); }
+    .sidebar-header {
+      height: var(--topbar-height); display: flex; align-items: center; padding: 0 20px;
+      background-color: rgba(0, 0, 0, 0.1); border-bottom: 1px solid #4b4b4b; overflow: hidden; white-space: nowrap;
+    }
+    .sidebar-header .logo-text { font-size: 16px; font-weight: bold; margin-left: 10px; opacity: 1; transition: opacity var(--transition-speed); }
+    .sidebar.collapsed .sidebar-header .logo-text { opacity: 0; display: none; }
+    .sidebar-menu { list-style: none; padding: 10px 0; margin: 0; }
+    .sidebar-menu li { width: 100%; }
+    .nav-link {
+      display: flex; align-items: center; padding: 12px 20px; color: #cfd8dc; transition: all 0.2s;
+      border-left: 4px solid transparent; white-space: nowrap; overflow: hidden; cursor: pointer;
+    }
+    .nav-link:hover, .nav-link.active { background-color: var(--sidebar-hover); color: #fff; border-left-color: var(--secondary-color); }
+    .nav-link i { min-width: 24px; margin-right: 15px; font-size: 20px; text-align: center; }
+    .nav-link span { font-size: 15px; }
+    .sidebar.collapsed .nav-link span { display: none; }
+    .nav-header { font-size: 12px; color: #aaa; padding: 5px 20px; text-transform: uppercase; }
+    .sidebar.collapsed .nav-header { display: none; }
+
+    .main-content-wrapper { flex: 1; margin-left: var(--sidebar-width); transition: margin-left var(--transition-speed); display: flex; flex-direction: column; width: 100%; }
+    .main-content-wrapper.expanded { margin-left: var(--sidebar-width-collapsed); }
+
+    .topbar {
+      height: var(--topbar-height); background-color: var(--topbar-bg); display: flex; justify-content: space-between;
+      align-items: center; padding: 0 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); position: sticky; top: 0; z-index: 900;
+    }
+    .toggle-btn { background: none; border: none; cursor: pointer; color: var(--primary-color); font-size: 24px; padding: 5px; }
+    .system-title { font-size: 20px; font-weight: bold; color: var(--secondary-color); margin-left: 15px; }
+    .user-profile { display: flex; align-items: center; gap: 15px; }
+    .user-name { font-weight: 500; color: var(--text-color); }
+
+    .content-body { padding: 30px; flex: 1; }
+    .card { background: #fff; border-radius: 4px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); padding: 25px; margin-bottom: 20px; border-top: 3px solid var(--secondary-color); }
+    .section { display: none; animation: fadeIn 0.4s ease-in-out; }
+    .section.active { display: block; }
+    h2 { margin-top: 0; color: var(--secondary-color); font-size: 22px; border-bottom: 1px solid #eee; padding-bottom: 10px; margin-bottom: 20px; }
+
+    /* --- Forms & Buttons --- */
+    .btn { display: inline-block; font-family: 'Sarabun', sans-serif; font-weight: 600; text-align: center; cursor: pointer; padding: 10px 20px; font-size: 16px; border-radius: 4px; border: none; transition: all 0.2s; }
+    .btn-primary { background-color: var(--secondary-color); color: #fff; }
+    .btn-primary:hover { background-color: #0026ca; transform: translateY(-1px); }
+    .btn-success { background-color: var(--success-color); color: #fff; }
+    .btn-danger { background-color: var(--danger-color); color: #fff; }
+    .btn-info { background-color: #17a2b8; color: white; }
+    .btn-secondary { background-color: #6c757d; color: white; }
+    .btn-logout { background-color: transparent; color: var(--danger-color); border: 1px solid var(--danger-color); padding: 5px 15px; font-size: 14px; }
+    .btn-logout:hover { background-color: var(--danger-color); color: white; }
+
+    /* --- Clean Table & Form --- */
+    .form-container { background: #fff; padding: 30px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); border: 1px solid #e0e0e0; }
+    .form-header { border-bottom: 2px solid var(--secondary-color); padding-bottom: 15px; margin-bottom: 25px; display: flex; justify-content: space-between; align-items: center; }
+    .form-header h2, .form-header h3 { margin: 0; color: var(--secondary-color); font-size: 20px; }
+    .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+    .form-grid .full-width { grid-column: span 2; }
+    
+    .clean-input-group label { display: block; margin-bottom: 6px; font-weight: 600; color: #333; font-size: 14px; }
+    .clean-input-group input, .clean-input-group select, .clean-input-group textarea { width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 4px; font-size: 15px; background-color: #fdfdfd; transition: border 0.3s; font-family: 'Sarabun', sans-serif; }
+    .clean-input-group input:focus, .clean-input-group select:focus, .clean-input-group textarea:focus { border-color: var(--accent-color); background-color: #fff; outline: none; }
+    
+    .action-bar { margin-top: 25px; padding-top: 20px; border-top: 1px solid #eee; display: flex; justify-content: flex-end; gap: 10px; }
+    
+    .clean-table { width: 100%; border-collapse: separate; border-spacing: 0; border: 1px solid #eee; border-radius: 6px; overflow: hidden; }
+    .clean-table th { background-color: #f1f3f5; color: #495057; font-weight: 700; padding: 12px 15px; border-bottom: 2px solid #ddd; text-align: left; }
+    .clean-table td { padding: 12px 15px; border-bottom: 1px solid #eee; vertical-align: middle; color: #333; }
+    .clean-table tr:hover { background-color: #f8f9fa; }
+
+    .btn-delete-account { background-color: #fff; color: var(--danger-color); border: 1px solid var(--danger-color); padding: 8px 15px; border-radius: 4px; font-weight: bold; transition: all 0.2s; }
+    .btn-delete-account:hover { background-color: var(--danger-color); color: #fff; }
+
+    /* --- Job List Design (Full Width Stack) --- */
+    .job-container { 
+        display: flex;
+        flex-direction: column; /* เรียงลงมาเป็นแถวเดียว */
+        gap: 20px;
+        padding-bottom: 20px;
+    }
+
+    .job-card { 
+        background: #fff; 
+        border-radius: 12px; 
+        box-shadow: 0 4px 6px rgba(0,0,0,0.05); 
+        border: 1px solid #eaeaea; 
+        transition: all 0.3s ease; 
+        position: relative; 
+        display: flex; /* จัดเรียงภายในการ์ดเป็นแนวนอน */
+        flex-direction: row; 
+        align-items: stretch;
+        overflow: hidden;
+        min-height: 140px;
+    }
+
+    .job-card:hover { 
+        transform: translateY(-3px); 
+        box-shadow: 0 10px 20px rgba(0,0,0,0.1); 
+        border-color: var(--accent-color);
+    }
+
+    /* แถบสถานะด้านซ้าย */
+    .job-status-strip {
+        width: 8px;
+        flex-shrink: 0;
+    }
+    .strip-open { background: #28a745; }
+    .strip-full { background: #dc3545; }
+
+    /* เนื้อหาการ์ด */
+    .job-card-body {
+        flex-grow: 1;
+        padding: 20px;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+    }
+
+    .job-header-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        margin-bottom: 10px;
+    }
+
+    .job-title { 
+        font-size: 20px; 
+        font-weight: 700; 
+        color: #333; 
+        margin: 0;
+    }
+
+    .job-agency-badge {
+        display: inline-flex;
+        align-items: center;
+        background: #f1f3f5;
+        color: #555;
+        font-size: 13px;
+        padding: 4px 12px;
+        border-radius: 20px;
+        font-weight: 500;
+        margin-top: 5px;
+    }
+
+    .job-desc { 
+        font-size: 14px; 
+        color: #666; 
+        margin: 10px 0; 
+        display: -webkit-box; 
+        -webkit-line-clamp: 2; 
+        -webkit-box-orient: vertical; 
+        overflow: hidden; 
+    }
+
+    /* ส่วนขวา: วันที่และปุ่ม */
+    .job-card-actions {
+        width: 200px;
+        border-left: 1px solid #eee;
+        background: #fdfdfd;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        padding: 20px;
+        gap: 15px;
+        flex-shrink: 0;
+    }
+
+    .job-date-info {
+        text-align: center;
+        font-size: 13px;
+        color: #777;
+    }
+
+    .btn-apply-card {
+        padding: 10px 25px;
+        border-radius: 30px;
+        font-size: 14px;
+        font-weight: 600;
+        border: none;
+        cursor: pointer;
+        transition: all 0.2s;
+        width: 100%;
+        text-align: center;
+    }
+    .btn-apply-active {
+        background: var(--secondary-color);
+        color: #fff;
+        box-shadow: 0 4px 10px rgba(13, 71, 161, 0.2);
+    }
+    .btn-apply-active:hover {
+        background: #1565c0;
+        transform: scale(1.05);
+    }
+    .btn-apply-disabled {
+        background: #e0e0e0;
+        color: #999;
+        cursor: not-allowed;
+    }
+
+    /* Responsive Mobile: เปลี่ยนเป็นแนวตั้งเมื่อจอเล็ก */
+    @media (max-width: 768px) {
+        .job-card { flex-direction: column; }
+        .job-status-strip { height: 5px; width: 100%; }
+        .job-card-actions { 
+            width: 100%; 
+            border-left: none; 
+            border-top: 1px solid #eee; 
+            flex-direction: row; 
+            justify-content: space-between;
+        }
+        .btn-apply-card { width: auto; }
+    }
+
+
+    /* --- Application Form Page Design --- */
+    .application-paper {
+        background: #fff;
+        max-width: 800px;
+        margin: 0 auto;
+        border-radius: 8px;
+        box-shadow: 0 5px 25px rgba(0,0,0,0.1);
+        overflow: hidden;
+        border: 1px solid #e0e0e0;
+    }
+    
+    .paper-header {
+        background: var(--secondary-color);
+        color: #fff;
+        padding: 30px;
+        text-align: center;
+    }
+    .paper-header h2 {
+        color: #fff;
+        margin: 0;
+        font-size: 24px;
+        border: none;
+        padding: 0;
+    }
+    .paper-body {
+        padding: 40px;
+    }
+    
+    .info-section {
+        margin-bottom: 30px;
+        border-bottom: 1px dashed #ddd;
+        padding-bottom: 20px;
+    }
+    .info-section:last-child { border-bottom: none; }
+    
+    .info-label {
+        font-size: 13px;
+        color: #888;
+        text-transform: uppercase;
+        margin-bottom: 5px;
+        font-weight: 600;
+        letter-spacing: 0.5px;
+    }
+    .info-value {
+        font-size: 16px;
+        color: #333;
+        font-weight: 500;
+        margin-bottom: 15px;
+    }
+    .info-value.highlight {
+        color: var(--secondary-color);
+        font-size: 18px;
+        font-weight: 700;
+    }
+
+    .slot-selection-container {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 15px;
+        margin-top: 20px;
+    }
+    .slot-btn {
+        background: #fff;
+        border: 2px solid #e0e0e0;
+        border-radius: 8px;
+        padding: 20px;
+        cursor: pointer;
+        text-align: center;
+        transition: all 0.2s;
+    }
+    .slot-btn:hover:not(:disabled) {
+        border-color: var(--accent-color);
+        background: #f0f8ff;
+    }
+    .slot-btn.selected {
+        border-color: var(--secondary-color);
+        background: #e3f2fd;
+        color: var(--secondary-color);
+        box-shadow: 0 0 0 2px var(--secondary-color) inset;
+    }
+    .slot-btn:disabled {
+        background: #f9f9f9;
+        color: #ccc;
+        cursor: not-allowed;
+        border-color: #eee;
+    }
+    .slot-time { font-weight: bold; font-size: 16px; margin-bottom: 5px; }
+    .slot-quota { font-size: 12px; }
+
+    /* Modal */
+    .modal { display: none; position: fixed; z-index: 2000; left: 0; top: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.5); justify-content: center; align-items: center; }
+    .modal-content { background: #fff; padding: 30px; border-radius: 8px; width: 90%; max-width: 650px; position: relative; animation: fadeIn 0.3s ease-out; max-height: 90vh; overflow-y: auto; }
+    .close-button { position: absolute; top: 15px; right: 20px; font-size: 24px; cursor: pointer; }
+
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(-20px); } to { opacity: 1; transform: translateY(0); } }
+
+    @media (max-width: 768px) {
+      .sidebar { margin-left: -260px; }
+      .sidebar.active { margin-left: 0; }
+      .main-content-wrapper { margin-left: 0 !important; }
+      .paper-body { padding: 20px; }
+    }
+    .nav-item { display: none; } .nav-item.show { display: block; }
+    /* --- New Payroll Styles --- */
+
+/* 1. ตารางรายชื่อรอจ่าย (Payroll Table) */
+.payroll-table-container {
+    border: 1px solid #e0e0e0;
+    border-radius: 8px;
+    overflow: hidden;
+    margin-top: 15px;
+}
+.payroll-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+.payroll-table th {
+    background: #f1f3f5;
+    color: #495057;
+    font-weight: 600;
+    padding: 12px 15px;
+    text-align: left;
+    border-bottom: 2px solid #dee2e6;
+}
+.payroll-table td {
+    padding: 12px 15px;
+    border-bottom: 1px solid #eee;
+    vertical-align: middle;
+}
+.payroll-table tr:last-child td { border-bottom: none; }
+.payroll-table tr:hover { background-color: #f8f9fa; }
+
+/* 2. การ์ดเลือกช่วงเวลา (Time Slot Selection Cards) */
+.slot-selector {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr); /* แบ่ง 3 ช่องเท่ากัน */
+    gap: 10px;
+    margin-bottom: 20px;
+}
+.slot-card {
+    border: 2px solid #e0e0e0;
+    border-radius: 8px;
+    padding: 15px 5px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.2s;
+    background: #fff;
+    position: relative;
+}
+.slot-card:hover {
+    border-color: #b0bec5;
+    background: #fcfcfc;
+}
+.slot-card.active {
+    border-color: var(--secondary-color);
+    background-color: #e3f2fd; /* สีพื้นหลังเมื่อเลือก */
+    color: var(--secondary-color);
+    font-weight: bold;
+    box-shadow: 0 4px 6px rgba(13, 71, 161, 0.1);
+}
+.slot-card i {
+    font-size: 24px;
+    display: block;
+    margin-bottom: 5px;
+    color: #78909c;
+}
+.slot-card.active i { color: var(--secondary-color); }
+.slot-label { font-size: 13px; display: block; }
+.slot-price { font-size: 12px; color: #666; margin-top: 5px; }
+
+/* 3. กล่องแสดงยอดเงินรวม (Total Amount Box) */
+.pay-summary-box {
+    background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+    padding: 20px;
+    border-radius: 8px;
+    text-align: center;
+    border: 1px solid #ced4da;
+    margin-bottom: 20px;
+}
+.pay-summary-label { font-size: 14px; color: #555; margin-bottom: 5px; }
+.pay-summary-total {
+    font-size: 32px;
+    font-weight: 800;
+    color: var(--secondary-color);
+    font-family: 'Sarabun', sans-serif;
+}
+
+/* ซ่อน Radio Button เดิม */
+.hidden-radio { display: none; }
+
+/* --- Modern Manual UI Design --- */
+.modern-manual-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 30px;
+    padding: 10px;
+}
+
+.modern-manual-card {
+    position: relative;
+    background: #ffffff;
+    border-radius: 20px;
+    padding: 35px 25px;
+    text-decoration: none;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    border: 1px solid #f1f5f9;
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.03);
+    transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    z-index: 1;
+}
+
+.modern-manual-card:hover {
+    transform: translateY(-10px);
+    box-shadow: 0 20px 35px rgba(0, 0, 0, 0.08);
+    border-color: transparent;
+}
+
+/* ลายน้ำไอคอนพื้นหลัง */
+.card-bg-icon {
+    position: absolute;
+    top: -20px;
+    right: -20px;
+    opacity: 0.03;
+    z-index: -1;
+    transition: all 0.5s ease;
+}
+.card-bg-icon .material-icons {
+    font-size: 160px;
+}
+.modern-manual-card:hover .card-bg-icon {
+    transform: scale(1.1) rotate(-15deg);
+    opacity: 0.07;
+}
+
+/* กรอบไอคอนด้านบน */
+.manual-icon-wrapper {
+    width: 65px;
+    height: 65px;
+    border-radius: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 25px;
+    box-shadow: 0 8px 15px rgba(0,0,0,0.1);
+}
+
+.manual-icon-wrapper .material-icons {
+    font-size: 32px;
+    color: #ffffff;
+}
+
+/* เนื้อหา */
+.manual-content h3 {
+    font-size: 20px;
+    font-weight: 700;
+    color: #1e293b;
+    margin: 0 0 10px 0;
+}
+
+.manual-content p {
+    font-size: 14px;
+    color: #64748b;
+    line-height: 1.6;
+    margin: 0 0 25px 0;
+    flex-grow: 1;
+}
+
+/* ปุ่มกดด้านล่าง */
+.manual-action {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 14px;
+    font-weight: 700;
+    margin-top: auto;
+    padding: 10px 20px;
+    border-radius: 30px;
+    transition: all 0.3s;
+    width: fit-content;
+}
+
+.manual-action .material-icons {
+    font-size: 18px;
+    transition: transform 0.3s;
+}
+
+.modern-manual-card:hover .manual-action .material-icons {
+    transform: translateX(5px);
+}
+
+/* 🎨 Theme สี: นักศึกษา (ส้ม) */
+.card-student .manual-icon-wrapper { background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); }
+.card-student .manual-action { color: #d97706; background: #fffbeb; }
+.card-student:hover .manual-action { background: #d97706; color: #ffffff; box-shadow: 0 4px 15px rgba(217, 119, 6, 0.3); }
+
+/* 🎨 Theme สี: หน่วยงาน (น้ำเงิน) */
+.card-staff .manual-icon-wrapper { background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%); }
+.card-staff .manual-action { color: #2563eb; background: #eff6ff; }
+.card-staff:hover .manual-action { background: #2563eb; color: #ffffff; box-shadow: 0 4px 15px rgba(37, 99, 235, 0.3); }
+
+/* 🎨 Theme สี: ผู้ดูแลระบบ (ม่วง) */
+.card-admin .manual-icon-wrapper { background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%); }
+.card-admin .manual-action { color: #7c3aed; background: #f5f3ff; }
+.card-admin:hover .manual-action { background: #7c3aed; color: #ffffff; box-shadow: 0 4px 15px rgba(124, 58, 237, 0.3); }
+.history-wrapper {
+    background: #ffffff; border-radius: 16px; box-shadow: 0 4px 20px rgba(0,0,0,0.04); border: 1px solid #e2e8f0; padding: 30px; margin-bottom: 30px;
+  }
+  .modern-tab-container {
+    background: #f1f5f9; border-radius: 12px; padding: 5px; display: inline-flex; margin-bottom: 25px; border: 1px solid #e2e8f0;
+  }
+  .modern-tab {
+    padding: 10px 25px; border-radius: 8px; cursor: pointer; font-weight: 600; font-size: 15px; color: #64748b; transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); display: flex; align-items: center; gap: 8px;
+  }
+  .modern-tab:hover { color: #0f172a; }
+  .modern-tab.active {
+    background: #ffffff; color: #1976D2; box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+  }
+  .history-panel { display: none; animation: smoothFade 0.4s ease forwards; }
+  .history-panel.active { display: block; }
+  @keyframes smoothFade { 
+    from { opacity: 0; transform: translateY(10px); } 
+    to { opacity: 1; transform: translateY(0); } 
+  }
+  </style>
