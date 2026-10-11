@@ -385,38 +385,55 @@ function fetchStudentDataIfComplete(val) {
     }
 }
 
-setupNavClick('navYearEndClose', 'yearEndCloseSection', () => {
-    Swal.fire({
-        title: 'ระบบยังไม่เปิดให้ดำเนินการ',
-        html: `
-            <div style="font-family: 'Sarabun', sans-serif; font-size: 15px; color: #333; line-height: 1.6; text-align: center;">
-                เมนูปิดบัญชีสิ้นปีงบประมาณ (Year-End Closing)<br>
-                ยังไม่เปิดให้ดำเนินการเนื่องจากไม่อยู่ในช่วงระยะเวลาที่กำหนด<br><br>
-                <div style="background: #f8f9fa; border: 1px dashed #ccc; padding: 15px; border-radius: 8px; text-align: left;">
-                    <b style="color: #0d47a1;">หากมีข้อสงสัยกรุณาติดต่อผู้พัฒนาระบบ</b><br>
-                    • โทรศัพท์ <b style="color: #d32f2f;">092-4058084</b>
-                </div>
-            </div>
-        `,
-        icon: 'warning',
-        confirmButtonText: 'ตกลง',
-        confirmButtonColor: '#1e3a8a', 
-        allowOutsideClick: false, 
-        allowEscapeKey: false
-    }).then((result) => {
-        if (result.isConfirmed) {
-            showSection('adminDashboardSection');
-            document.querySelectorAll('.nav-link').forEach(l => l.classList.remove('active'));
-            const navDash = document.getElementById('navDashboard');
-            if (navDash) navDash.classList.add('active');
-        }
-    });
+setupNavClick('navYearEndClose', 'yearEndCloseSection', () => openFiscalYearManager());
 
-    if(currentUser.role !== 'admin' && currentUser.role !== 'executive') {
-        showAlert('คุณไม่มีสิทธิ์เข้าถึงเมนูนี้', 'error');
-        showSection('adminDashboardSection');
-    }
-});
+async function openFiscalYearManager() {
+  if (!currentUser || !['admin','executive','staff'].includes(currentUser.role)) {
+    showAlert('ไม่มีสิทธิ์เข้าถึงข้อมูลงบประมาณ', 'error'); return;
+  }
+  const token = sessionStorage.getItem('sessionToken');
+  try {
+    const years = await window.GAS_API.call('getFiscalYearList', [token]);
+    if (!years.success) throw new Error(years.message || 'โหลดรายการปีไม่สำเร็จ');
+    const options = years.years.map(y => `<option value="${y}">${y === years.activeYear ? 'ปี '+y+' (ปัจจุบัน)' : 'ปี '+y+' (ย้อนหลัง)'}</option>`).join('');
+    const result = await Swal.fire({
+      title:'บริหารปีงบประมาณ / ข้อมูลย้อนหลัง',width:850,
+      html:`<div style="text-align:left;font-family:Sarabun,sans-serif">
+        <label>เลือกปีงบประมาณ</label>
+        <select id="fiscalSelect" class="swal2-select" style="width:100%;margin:8px 0">${options}</select>
+        <div id="fiscalBudgetResult" style="overflow:auto;max-height:350px">เลือกปีเพื่อดูงบประมาณ</div>
+        ${currentUser.role === 'admin' ? '<button type="button" id="closeFiscalBtn" class="swal2-confirm swal2-styled" style="background:#b91c1c;margin-top:15px">ปิดปีงบประมาณ 2569 และเริ่มปี 2570</button>' : ''}
+        <p style="font-size:13px;color:#64748b">ข้อมูลปีที่ปิดแล้วเป็นแบบอ่านอย่างเดียว และไม่มีการลบประวัติการเบิกจ่าย</p></div>`,
+      showConfirmButton:false,showCloseButton:true,
+      didOpen: () => {
+        const select=document.getElementById('fiscalSelect');
+        const load=async () => {
+          const area=document.getElementById('fiscalBudgetResult');
+          area.textContent='กำลังโหลด...';
+          try {
+            const response=await window.GAS_API.call('getFiscalBudgetOverview',[token,Number(select.value)]);
+            if(!response.success) throw new Error(response.message);
+            const safe=s=>String(s == null ? '' : s).replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+            const money=n=>Number(n||0).toLocaleString('th-TH',{minimumFractionDigits:2,maximumFractionDigits:2});
+            const rows=response.stats.map(x=>`<tr><td>${safe(x.department)}</td><td>${safe(x.budgetName)}</td><td>${safe(x.source)}</td><td style="text-align:right">${money(x.allocated)}</td><td style="text-align:right">${money(x.used)}</td></tr>`).join('');
+            const allocated=response.stats.reduce((sum,x)=>sum+Number(x.allocated||0),0),used=response.stats.reduce((sum,x)=>sum+Number(x.used||0),0);
+            area.innerHTML=`<p><strong>ปีงบประมาณ ${response.year}</strong> ${response.readOnly?'(ย้อนหลัง / อ่านอย่างเดียว)':'(กำลังดำเนินการ)'}</p><p>จัดสรร ${money(allocated)} บาท | ใช้ไป ${money(used)} บาท | คงเหลือ ${money(allocated-used)} บาท</p><table style="width:100%;font-size:13px;border-collapse:collapse" border="1" cellpadding="5"><thead><tr><th>หน่วยงาน</th><th>รายการงบ</th><th>ประเภท</th><th>จัดสรร</th><th>ใช้ไป</th></tr></thead><tbody>${rows||'<tr><td colspan="5">ไม่มีรายการงบประมาณ</td></tr>'}</tbody></table>`;
+          } catch(err) {area.textContent=err.message;}
+        };
+        select.addEventListener('change',load);load();
+        const closeBtn=document.getElementById('closeFiscalBtn');
+        if(closeBtn) closeBtn.onclick=async()=>{
+          if(years.activeYear!==2569){Swal.showValidationMessage('ปีงบประมาณ 2569 ถูกปิดแล้ว');return;}
+          const confirm=await Swal.fire({title:'ยืนยันปิดปีงบประมาณ 2569?',text:'ระบบจะเก็บงบย้อนหลัง จากนั้นเคลียร์งบปีปัจจุบันเป็น 0 บาท โดยไม่ลบข้อมูลเบิกจ่ายและนักศึกษา',icon:'warning',input:'text',inputPlaceholder:'พิมพ์ ปิดงบ 2569',showCancelButton:true,confirmButtonText:'ยืนยันปิดงบ',inputValidator:v=>v==='ปิดงบ 2569'?undefined:'กรุณาพิมพ์ ปิดงบ 2569'});
+          if(!confirm.isConfirmed)return;
+          Swal.fire({title:'กำลังบันทึกข้อมูลย้อนหลัง',allowOutsideClick:false,didOpen:()=>Swal.showLoading()});
+          try {const r=await window.GAS_API.call('closeFiscalYearBudget',[token,2569,confirm.value]);if(!r.success)throw new Error(r.message);await Swal.fire('สำเร็จ','ปิดปี 2569 แล้ว เปิดปี 2570 ด้วยงบ 0 บาท','success');window.location.reload();}
+          catch(err){Swal.fire('ไม่สำเร็จ',err.message,'error');}
+        };
+      }
+    });
+  } catch(err) {Swal.fire('ข้อผิดพลาด',err.message,'error');}
+}
 
 function exportYearEndHistoryCSV() {
     showLoading();
