@@ -668,61 +668,132 @@ document.getElementById('editRegistrationForm').onsubmit = (e) => {
     }).updateRegistration(token, regId, {status: newStatus}); // 🛡️ แนบ Token ตรงนี้
 };
 
-function loadDashboardOverview() {
-    showLoading();
-    
-    let agencyParam = null;
-    if (currentUser.role === 'staff' && sessionStorage.getItem('impersonate_mode') === 'true') {
-        agencyParam = currentUser.faculty;
+// Fiscal Dashboard: older years are read-only. All values are returned by Apps Script.
+let dashboardFiscalSelection = null;
+let dashboardFiscalRequest = 0;
+function dashboardFiscalToken_() { return sessionStorage.getItem('sessionToken') || ''; }
+function dashboardFiscalNumber_(value) { return Number(value || 0).toLocaleString('th-TH'); }
+function dashboardFiscalSet_(id, value) {
+    const el = document.getElementById(id);
+    if (el) el.textContent = value;
+}
+function dashboardFiscalSelector_() {
+    let host = document.getElementById('dashboardFiscalControl');
+    if (host) return host;
+    const title = document.getElementById('dashTitle');
+    if (!title || !title.parentNode) return null;
+    host = document.createElement('div');
+    host.id = 'dashboardFiscalControl';
+    host.style.cssText = 'display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:12px 0;';
+    const label = document.createElement('label');
+    label.textContent = 'เลือกปีงบประมาณ';
+    label.htmlFor = 'dashboardFiscalYear';
+    label.style.fontWeight = '600';
+    const select = document.createElement('select');
+    select.id = 'dashboardFiscalYear';
+    select.setAttribute('aria-label', 'เลือกปีงบประมาณสำหรับภาพรวมงบประมาณ');
+    select.style.cssText = 'min-width:170px;border:1px solid #cbd5e1;border-radius:8px;padding:9px 12px;background:white;font-family:inherit;';
+    select.addEventListener('change', function () {
+        dashboardFiscalSelection = Number(select.value);
+        dashboardFiscalLoadYear_(dashboardFiscalSelection);
+    });
+    const note = document.createElement('span');
+    note.id = 'dashboardFiscalMode';
+    note.style.cssText = 'font-size:13px;color:#64748b';
+    host.append(label, select, note);
+    title.parentNode.insertBefore(host, title.nextSibling);
+    return host;
+}
+function dashboardFiscalRender_(stats, year, archived, agency) {
+    dashboardFiscalSet_('statTotalAllocated', dashboardFiscalNumber_(stats.allocated));
+    dashboardFiscalSet_('statTotalUsed', dashboardFiscalNumber_(stats.used));
+    dashboardFiscalSet_('statTotalBalance', dashboardFiscalNumber_(stats.balance));
+    const adminView = currentUser.role === 'admin' || currentUser.role === 'executive';
+    [['cardHiredGlobalContainer', adminView], ['cardHiredLocalContainer', !adminView],
+     ['cardRegisteredGlobalContainer', adminView], ['cardNotHiredContainer', true],
+     ['cardEligibleContainer', true]].forEach(function (entry) {
+        const el = document.getElementById(entry[0]);
+        if (el) el.style.display = entry[1] ? 'flex' : 'none';
+    });
+    // Never portray unarchived annual student headcounts as zero.
+    const missing = '—';
+    dashboardFiscalSet_('statHiredGlobal', archived ? missing : dashboardFiscalNumber_(stats.hiredCountGlobal));
+    dashboardFiscalSet_('statHiredLocal', archived ? missing : dashboardFiscalNumber_(stats.hiredCountLocal));
+    dashboardFiscalSet_('statNotHired', archived ? missing : dashboardFiscalNumber_(stats.notHiredCount));
+    dashboardFiscalSet_('statEligibleCount', archived ? missing : dashboardFiscalNumber_(stats.eligibleCount));
+    dashboardFiscalSet_('statRegisteredGlobal', archived ? missing : dashboardFiscalNumber_(stats.totalRegisteredGlobal));
+    const title = document.getElementById('dashTitle');
+    if (title) {
+        title.textContent = '▣ ภาพรวมงบประมาณ ปี ' + year + (adminView ? ' (มหาวิทยาลัยอุบลราชธานี)' : ' (' + (agency || 'หน่วยงาน') + ')');
     }
-
-    google.script.run.withSuccessHandler(res => {
-        hideLoading();
-        
-        if (res.success && res.stats) {
-            document.getElementById('statTotalAllocated').innerText = Number(res.stats.allocated || 0).toLocaleString();
-            document.getElementById('statTotalUsed').innerText = Number(res.stats.used || 0).toLocaleString();
-            document.getElementById('statTotalBalance').innerText = Number(res.stats.balance || 0).toLocaleString();
-            
-            const cardRed = document.getElementById('cardNotHiredContainer');
-            const cardPurple = document.getElementById('cardEligibleContainer');
-            if(cardRed) cardRed.style.display = 'flex'; 
-            if(cardPurple) cardPurple.style.display = 'flex'; 
-
-            document.getElementById('statNotHired').innerText = Number(res.stats.notHiredCount || 0).toLocaleString();
-            if(document.getElementById('statEligibleCount')) {
-                document.getElementById('statEligibleCount').innerText = Number(res.stats.eligibleCount || 0).toLocaleString();
-            }
-
-            const cardLocal = document.getElementById('cardHiredLocalContainer'); 
-            const cardGlobal = document.getElementById('cardHiredGlobalContainer'); 
-            const cardRegGlobal = document.getElementById('cardRegisteredGlobalContainer'); 
-
-            if (currentUser.role === 'admin' || currentUser.role === 'executive') {
-                cardGlobal.style.display = 'flex';
-                cardLocal.style.display = 'none';
-                
-                if(cardRegGlobal) {
-                    cardRegGlobal.style.display = 'flex';
-                    document.getElementById('statRegisteredGlobal').innerText = Number(res.stats.totalRegisteredGlobal || 0).toLocaleString();
-                }
-                
-                document.getElementById('statHiredGlobal').innerText = Number(res.stats.hiredCountGlobal || 0).toLocaleString();
-                document.getElementById('dashTitle').innerHTML = '<i class="material-icons" style="vertical-align: bottom;">analytics</i> ภาพรวมงบประมาณ ปี 2569 (มหาวิทยาลัยอุบลราชธานี)';
-                document.getElementById('dashSubtitle').innerText = 'ข้อมูลสรุปยอดรวมจากทุกหน่วยงานในระบบ';
-
-            } else {
-                cardGlobal.style.display = 'none';
-                cardLocal.style.display = 'flex';
-                
-                if(cardRegGlobal) cardRegGlobal.style.display = 'none';
-                
-                document.getElementById('statHiredLocal').innerText = Number(res.stats.hiredCountLocal || 0).toLocaleString();
-                document.getElementById('dashTitle').innerHTML = `<i class="material-icons" style="vertical-align: bottom;">analytics</i> ภาพรวมงบประมาณ (${currentUser.faculty})`;
-                document.getElementById('dashSubtitle').innerText = 'ข้อมูลเฉพาะหน่วยงานของท่าน';
-            }
+    const sub = document.getElementById('dashSubtitle');
+    if (sub) sub.textContent = archived ? 'ข้อมูลงบประมาณย้อนหลัง (อ่านอย่างเดียว) — สถิตินักศึกษาปีย้อนหลังไม่ได้จัดเก็บใน Snapshot' : 'ข้อมูลสรุปปีงบประมาณปัจจุบัน';
+    const mode = document.getElementById('dashboardFiscalMode');
+    if (mode) mode.textContent = archived ? 'ข้อมูลย้อนหลัง · อ่านอย่างเดียว' : 'ปีปัจจุบัน · อัปเดตล่าสุด';
+}
+function dashboardFiscalLoadYear_(year) {
+    const requestId = ++dashboardFiscalRequest;
+    const agency = currentUser.role === 'staff' ? String(currentUser.faculty || '').trim() : null;
+    showLoading();
+    // First ask the server which year is active; do not trust browser dates.
+    google.script.run.withSuccessHandler(function (info) {
+        if (requestId !== dashboardFiscalRequest) return;
+        if (!info || !info.success) { hideLoading(); showAlert(info && info.message || 'ไม่สามารถโหลดปีงบประมาณ', 'error'); return; }
+        const active = Number(info.activeYear);
+        if (Number(year) === active) {
+            google.script.run.withSuccessHandler(function (res) {
+                if (requestId !== dashboardFiscalRequest) return;
+                hideLoading();
+                if (!res || !res.success || !res.stats) { showAlert(res && res.message || 'ไม่สามารถโหลดภาพรวมงบประมาณ', 'error'); return; }
+                dashboardFiscalRender_(res.stats, active, false, agency);
+            }).withFailureHandler(function (err) {
+                if (requestId !== dashboardFiscalRequest) return;
+                hideLoading(); showAlert(err.message, 'error');
+            }).getFinancialOverview(currentUser.id, agency);
+            return;
         }
-    }).getFinancialOverview(currentUser.id, agencyParam);
+        google.script.run.withSuccessHandler(function (res) {
+            if (requestId !== dashboardFiscalRequest) return;
+            hideLoading();
+            if (!res || !res.success) { showAlert(res && res.message || 'ไม่พบข้อมูลปีงบประมาณ', 'error'); return; }
+            const lines = Array.isArray(res.stats) ? res.stats.filter(function (b) {
+                return !agency || String(b.department || '').trim() === agency;
+            }) : [];
+            const allocated = lines.reduce((sum, b) => sum + (Number(b.allocated) || 0), 0);
+            const used = lines.reduce((sum, b) => sum + (Number(b.used) || 0), 0);
+            dashboardFiscalRender_({allocated:allocated,used:used,balance:allocated-used}, Number(year), true, agency);
+        }).withFailureHandler(function (err) {
+            if (requestId !== dashboardFiscalRequest) return;
+            hideLoading(); showAlert(err.message, 'error');
+        }).getFiscalBudgetOverview(dashboardFiscalToken_(), Number(year));
+    }).withFailureHandler(function (err) {
+        if (requestId !== dashboardFiscalRequest) return;
+        hideLoading(); showAlert(err.message, 'error');
+    }).getFiscalYearList(dashboardFiscalToken_());
+}
+function loadDashboardOverview() {
+    const host = dashboardFiscalSelector_();
+    if (!host) return;
+    showLoading();
+    google.script.run.withSuccessHandler(function (res) {
+        if (!res || !res.success) { hideLoading(); showAlert(res && res.message || 'โหลดปีงบประมาณไม่สำเร็จ', 'error'); return; }
+        const select = document.getElementById('dashboardFiscalYear');
+        const years = (res.years || []).map(Number).filter(Number.isInteger);
+        const active = Number(res.activeYear);
+        if (!years.includes(active)) years.unshift(active);
+        select.replaceChildren();
+        years.sort((a,b)=>b-a).forEach(function (year) {
+            const option = document.createElement('option');
+            option.value = String(year);
+            option.textContent = 'ปีงบประมาณ ' + year + (year === active ? ' (ปัจจุบัน)' : ' (ย้อนหลัง)');
+            select.appendChild(option);
+        });
+        if (!years.includes(Number(dashboardFiscalSelection))) dashboardFiscalSelection = active;
+        select.value = String(dashboardFiscalSelection);
+        hideLoading();
+        dashboardFiscalLoadYear_(dashboardFiscalSelection);
+    }).withFailureHandler(function (err) { hideLoading(); showAlert(err.message, 'error'); })
+      .getFiscalYearList(dashboardFiscalToken_());
 }
 
     function base64ToBlob(base64, mimeType) {
