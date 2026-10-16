@@ -517,6 +517,7 @@ function logout() {
 }
 
 function updateUserDashboard() {
+  renderFiscalRenewalButton_();
     if (currentUser) {
         let statusSuffix = "";
         const currentStatus = currentUser.studentStatus || currentUser.StudentStatus || "";
@@ -1030,3 +1031,32 @@ document.getElementById('jobForm').onsubmit = (e) => {
     const token = sessionStorage.getItem('sessionToken'); // 🛡️ ดึง Token
     if(id) handler.updateActivity(token, id, data); else handler.addActivity(token, data);
 };
+
+// Explicit annual registration for existing logged-in students; no duplicate Users rows.
+function renderFiscalRenewalButton_() {
+  if (!currentUser || currentUser.role!=='user') return;
+  const host=document.getElementById('userDashboardSection'); if(!host) return;
+  let panel=document.getElementById('annualFiscalRenewPanel');
+  if(!panel) {panel=document.createElement('div');panel.id='annualFiscalRenewPanel';panel.style.cssText='border:1px solid #d1d5db;border-radius:10px;padding:12px;margin:14px 0;background:#fff';host.prepend(panel);}
+  panel.textContent='กำลังตรวจสอบการสมัครประจำปี...';
+  const token=sessionStorage.getItem('sessionToken');
+  google.script.run.withSuccessHandler(function(r){
+    if(!r||!r.success){panel.textContent='ไม่สามารถตรวจสอบสถานะสมัครประจำปี';return;}
+    panel.replaceChildren();
+    const heading=document.createElement('strong');heading.textContent='การสมัครปีงบประมาณ '+r.activeYear;
+    const description=document.createElement('p');description.textContent=r.registered?'ลงทะเบียนปีนี้แล้ว':r.eligible?'มีสิทธิ์สมัครปีนี้ กรุณากดยืนยัน':'ยังไม่มีสิทธิ์สมัครปีนี้ กรุณาติดต่อเจ้าหน้าที่';
+    panel.append(heading,description);
+    if(!r.registered&&r.eligible){
+      const button=document.createElement('button');button.type='button';button.textContent='ยืนยันสมัครปีงบประมาณ '+r.activeYear;
+      button.addEventListener('click',function(){
+        if(!window.confirm('ยืนยันสมัครงานระหว่างเรียนประจำปีงบประมาณ '+r.activeYear+'?'))return;
+        button.disabled=true;
+        google.script.run.withSuccessHandler(function(res){
+          if(res&&res.success)renderFiscalRenewalButton_();
+          else {button.disabled=false;alert(res&&res.message||'บันทึกไม่สำเร็จ');}
+        }).withFailureHandler(function(err){button.disabled=false;alert(err.message);}).registerMyFiscalYear(token);
+      });
+      panel.append(button);
+    }
+  }).withFailureHandler(function(){panel.textContent='ไม่สามารถตรวจสอบสถานะสมัครประจำปี';}).getMyFiscalRegistration(token);
+}
