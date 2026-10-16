@@ -717,17 +717,18 @@ function dashboardFiscalRender_(stats, year, archived, agency) {
     });
     // Never portray unarchived annual student headcounts as zero.
     const missing = '—';
-    dashboardFiscalSet_('statHiredGlobal', archived ? missing : dashboardFiscalNumber_(stats.hiredCountGlobal));
-    dashboardFiscalSet_('statHiredLocal', archived ? missing : dashboardFiscalNumber_(stats.hiredCountLocal));
-    dashboardFiscalSet_('statNotHired', archived ? missing : dashboardFiscalNumber_(stats.notHiredCount));
-    dashboardFiscalSet_('statEligibleCount', archived ? missing : dashboardFiscalNumber_(stats.eligibleCount));
-    dashboardFiscalSet_('statRegisteredGlobal', archived ? missing : dashboardFiscalNumber_(stats.totalRegisteredGlobal));
+    const val = function(x) { return x === null || x === undefined ? missing : dashboardFiscalNumber_(x); };
+    dashboardFiscalSet_('statHiredGlobal', val(stats.hiredCountGlobal));
+    dashboardFiscalSet_('statHiredLocal', val(stats.hiredCountLocal));
+    dashboardFiscalSet_('statNotHired', val(stats.notHiredCount));
+    dashboardFiscalSet_('statEligibleCount', val(stats.eligibleCount));
+    dashboardFiscalSet_('statRegisteredGlobal', val(stats.totalRegisteredGlobal));
     const title = document.getElementById('dashTitle');
     if (title) {
         title.textContent = '▣ ภาพรวมงบประมาณ' + (adminView ? ' (มหาวิทยาลัยอุบลราชธานี)' : ' (' + (agency || 'หน่วยงาน') + ')');
     }
     const sub = document.getElementById('dashSubtitle');
-    if (sub) sub.textContent = archived ? 'ข้อมูลงบประมาณย้อนหลัง (อ่านอย่างเดียว) — สถิตินักศึกษาปีย้อนหลังไม่ได้จัดเก็บใน Snapshot' : 'ข้อมูลสรุปปีงบประมาณปัจจุบัน';
+    if (sub) sub.textContent = archived ? 'ข้อมูลงบประมาณย้อนหลัง (อ่านอย่างเดียว) — จำนวนผู้ลงทะเบียนอ้างอิงจาก Users; จำนวนผู้มีสิทธิ์ย้อนหลังจะแสดงเมื่อมีหลักฐาน Snapshot' : 'ข้อมูลสรุปปีงบประมาณปัจจุบัน';
     const mode = document.getElementById('dashboardFiscalMode');
     if (mode) mode.textContent = archived ? 'ข้อมูลย้อนหลัง · อ่านอย่างเดียว' : 'ปีปัจจุบัน · อัปเดตล่าสุด';
 }
@@ -761,7 +762,14 @@ function dashboardFiscalLoadYear_(year) {
             }) : [];
             const allocated = lines.reduce((sum, b) => sum + (Number(b.allocated) || 0), 0);
             const used = lines.reduce((sum, b) => sum + (Number(b.used) || 0), 0);
-            dashboardFiscalRender_({allocated:allocated,used:used,balance:allocated-used}, Number(year), true, agency);
+            google.script.run.withSuccessHandler(function (studentRes) {
+                if (requestId !== dashboardFiscalRequest) return;
+                const student = studentRes && studentRes.success ? studentRes.stats : {};
+                dashboardFiscalRender_(Object.assign({allocated:allocated,used:used,balance:allocated-used},student),Number(year),true,agency);
+            }).withFailureHandler(function () {
+                if (requestId !== dashboardFiscalRequest) return;
+                dashboardFiscalRender_({allocated:allocated,used:used,balance:allocated-used},Number(year),true,agency);
+            }).getFiscalStudentStats(dashboardFiscalToken_(), Number(year));
         }).withFailureHandler(function (err) {
             if (requestId !== dashboardFiscalRequest) return;
             hideLoading(); showAlert(err.message, 'error');
