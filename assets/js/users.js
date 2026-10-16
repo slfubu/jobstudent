@@ -744,13 +744,24 @@ function dashboardFiscalLoadYear_(year) {
         if (Number(year) === active) {
             google.script.run.withSuccessHandler(function (res) {
                 if (requestId !== dashboardFiscalRequest) return;
-                hideLoading();
-                if (!res || !res.success || !res.stats) { showAlert(res && res.message || 'ไม่สามารถโหลดภาพรวมงบประมาณ', 'error'); return; }
-                dashboardFiscalRender_(res.stats, active, false, agency);
-            }).withFailureHandler(function (err) {
+                if (!res || !res.success || !res.stats) { hideLoading(); showAlert(res && res.message || 'ไม่สามารถโหลดภาพรวมงบประมาณ', 'error'); return; }
+                google.script.run.withSuccessHandler(function (studentRes) {
+                    if (requestId !== dashboardFiscalRequest) return;
+                    hideLoading();
+                    // Financial figures from getFinancialOverview; student figures from FY-aware Users/Payroll.
+                    // Do not use legacy cumulative counts from the former function.
+                    const yearly = studentRes && studentRes.success ? studentRes.stats : {
+                        hiredCountGlobal:null,hiredCountLocal:null,notHiredCount:null,eligibleCount:null,totalRegisteredGlobal:null
+                    };
+                    dashboardFiscalRender_(Object.assign({},res.stats,yearly),active,false,agency);
+                }).withFailureHandler(function(err) {
+                    if (requestId !== dashboardFiscalRequest) return;
+                    hideLoading(); showAlert('โหลดสถิติรายปีไม่สำเร็จ: '+err.message,'error');
+                }).getFiscalStudentStats(dashboardFiscalToken_(),active);
+            }).withFailureHandler(function(err) {
                 if (requestId !== dashboardFiscalRequest) return;
-                hideLoading(); showAlert(err.message, 'error');
-            }).getFinancialOverview(currentUser.id, agency);
+                hideLoading(); showAlert(err.message,'error');
+            }).getFinancialOverview(currentUser.id,agency);
             return;
         }
         google.script.run.withSuccessHandler(function (res) {
@@ -764,7 +775,7 @@ function dashboardFiscalLoadYear_(year) {
             const used = lines.reduce((sum, b) => sum + (Number(b.used) || 0), 0);
             google.script.run.withSuccessHandler(function (studentRes) {
                 if (requestId !== dashboardFiscalRequest) return;
-                const student = studentRes && studentRes.success ? studentRes.stats : {};
+                const student = studentRes && studentRes.success ? studentRes.stats : {hiredCountGlobal:null,hiredCountLocal:null,notHiredCount:null,eligibleCount:null,totalRegisteredGlobal:null};
                 dashboardFiscalRender_(Object.assign({allocated:allocated,used:used,balance:allocated-used},student),Number(year),true,agency);
             }).withFailureHandler(function () {
                 if (requestId !== dashboardFiscalRequest) return;
