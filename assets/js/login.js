@@ -184,6 +184,17 @@
     sessionStorage.setItem('currentUser', JSON.stringify(res.user));
     sessionStorage.setItem('sessionToken', res.token);
     sessionStorage.removeItem('tempLoginId');
+    if(res.annualRenewalRequired && res.user.role === 'user') {
+      const year = new Date().getFullYear()+543+(new Date().getMonth()>=9?1:0);
+      const answer = await Swal.fire({title:'ยืนยันลงทะเบียนประจำปีงบประมาณ '+year,text:'ท่านมีบัญชีเดิม กรุณายืนยันลงทะเบียนในปีปัจจุบันก่อนเข้าใช้งาน',icon:'question',showCancelButton:true,confirmButtonText:'ยืนยันลงทะเบียน',cancelButtonText:'ยกเลิก'});
+      if(!answer.isConfirmed){sessionStorage.removeItem('sessionToken');sessionStorage.removeItem('currentUser');showAuthSection('loginSection');return;}
+      try {
+        const renew=await apiCall('registerMyFiscalYear');
+        if(!renew || !renew.success) throw new Error(renew && renew.message || 'ยืนยันลงทะเบียนไม่สำเร็จ');
+      } catch(err) {
+        sessionStorage.removeItem('sessionToken');sessionStorage.removeItem('currentUser');showAuthSection('loginSection');throw err;
+      }
+    }
     await loadProtectedApplication();
   }
 
