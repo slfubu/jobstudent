@@ -724,7 +724,7 @@ function dashboardFiscalRender_(stats, year, archived, agency) {
     dashboardFiscalSet_('statRegisteredGlobal', archived ? missing : dashboardFiscalNumber_(stats.totalRegisteredGlobal));
     const title = document.getElementById('dashTitle');
     if (title) {
-        title.textContent = '▣ ภาพรวมงบประมาณ ปี ' + year + (adminView ? ' (มหาวิทยาลัยอุบลราชธานี)' : ' (' + (agency || 'หน่วยงาน') + ')');
+        title.textContent = '▣ ภาพรวมงบประมาณ' + (adminView ? ' (มหาวิทยาลัยอุบลราชธานี)' : ' (' + (agency || 'หน่วยงาน') + ')');
     }
     const sub = document.getElementById('dashSubtitle');
     if (sub) sub.textContent = archived ? 'ข้อมูลงบประมาณย้อนหลัง (อ่านอย่างเดียว) — สถิตินักศึกษาปีย้อนหลังไม่ได้จัดเก็บใน Snapshot' : 'ข้อมูลสรุปปีงบประมาณปัจจุบัน';
