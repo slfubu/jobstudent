@@ -725,10 +725,10 @@ function dashboardFiscalRender_(stats, year, archived, agency) {
     dashboardFiscalSet_('statRegisteredGlobal', val(stats.totalRegisteredGlobal));
     const title = document.getElementById('dashTitle');
     if (title) {
-        title.textContent = '▣ ภาพรวมงบประมาณ' + (adminView ? ' (มหาวิทยาลัยอุบลราชธานี)' : ' (' + (agency || 'หน่วยงาน') + ')');
+        title.textContent = 'ภาพรวมงบประมาณ' + (adminView ? ' (มหาวิทยาลัยอุบลราชธานี)' : ' (' + (agency || 'หน่วยงาน') + ')');
     }
     const sub = document.getElementById('dashSubtitle');
-    if (sub) sub.textContent = archived ? 'ข้อมูลงบประมาณย้อนหลัง (อ่านอย่างเดียว) — จำนวนผู้มีสิทธิ์ตามชีต FiscalEligibleCounts ของปีที่เลือก' : 'ข้อมูลสรุปปีงบประมาณปัจจุบัน · จำนวนผู้มีสิทธิ์ตามชีต FiscalEligibleCounts';
+    if (sub) sub.textContent = archived ? 'ข้อมูลงบประมาณย้อนหลัง (อ่านอย่างเดียว) — จำนวนผู้มีสิทธิ์ตามฐานข้อมูลระบบทำงานระหว่างเรียนของปีที่เลือก' : 'ข้อมูลสรุปปีงบประมาณปัจจุบันจากฐานข้อมูลระบบทำงานระหว่างเรียน';
     const mode = document.getElementById('dashboardFiscalMode');
     if (mode) mode.textContent = archived ? 'ข้อมูลย้อนหลัง · อ่านอย่างเดียว' : 'ปีปัจจุบัน · อัปเดตล่าสุด';
 }
