@@ -728,7 +728,7 @@ function dashboardFiscalRender_(stats, year, archived, agency) {
         title.textContent = '▣ ภาพรวมงบประมาณ' + (adminView ? ' (มหาวิทยาลัยอุบลราชธานี)' : ' (' + (agency || 'หน่วยงาน') + ')');
     }
     const sub = document.getElementById('dashSubtitle');
-    if (sub) sub.textContent = archived ? 'ข้อมูลงบประมาณย้อนหลัง (อ่านอย่างเดียว) — จำนวนผู้ลงทะเบียนอ้างอิงจาก Users; จำนวนผู้มีสิทธิ์ย้อนหลังจะแสดงเมื่อมีหลักฐาน Snapshot' : 'ข้อมูลสรุปปีงบประมาณปัจจุบัน';
+    if (sub) sub.textContent = archived ? 'ข้อมูลงบประมาณย้อนหลัง (อ่านอย่างเดียว) — จำนวนผู้มีสิทธิ์ตามชีต FiscalEligibleCounts ของปีที่เลือก' : 'ข้อมูลสรุปปีงบประมาณปัจจุบัน · จำนวนผู้มีสิทธิ์ตามชีต FiscalEligibleCounts';
     const mode = document.getElementById('dashboardFiscalMode');
     if (mode) mode.textContent = archived ? 'ข้อมูลย้อนหลัง · อ่านอย่างเดียว' : 'ปีปัจจุบัน · อัปเดตล่าสุด';
 }
@@ -750,9 +750,12 @@ function dashboardFiscalLoadYear_(year) {
                     hideLoading();
                     // Financial figures from getFinancialOverview; student figures from FY-aware Users/Payroll.
                     // Do not use legacy cumulative counts from the former function.
-                    const yearly = studentRes && studentRes.success ? studentRes.stats : {
-                        hiredCountGlobal:null,hiredCountLocal:null,notHiredCount:null,eligibleCount:null,totalRegisteredGlobal:null
-                    };
+                    if (!studentRes || !studentRes.success) {
+                        hideLoading();
+                        showAlert(studentRes && studentRes.message || 'โหลดสถิตินักศึกษารายปีไม่สำเร็จ', 'error');
+                        return;
+                    }
+                    const yearly = studentRes.stats;
                     const budgetRows = (Array.isArray(res.stats) ? res.stats : []).filter(function(b) {
                         return !agency || String(b.department || '').trim() === agency;
                     });
@@ -762,7 +765,7 @@ function dashboardFiscalLoadYear_(year) {
                 }).withFailureHandler(function(err) {
                     if (requestId !== dashboardFiscalRequest) return;
                     hideLoading(); showAlert('โหลดสถิติรายปีไม่สำเร็จ: '+err.message,'error');
-                }).getFiscalStudentStats(dashboardFiscalToken_(),active);
+                }).getFiscalEligibleDashboardStats(dashboardFiscalToken_(),active);
             }).withFailureHandler(function(err) {
                 if (requestId !== dashboardFiscalRequest) return;
                 hideLoading(); showAlert(err.message,'error');
@@ -771,8 +774,7 @@ function dashboardFiscalLoadYear_(year) {
         }
         google.script.run.withSuccessHandler(function (res) {
             if (requestId !== dashboardFiscalRequest) return;
-            hideLoading();
-            if (!res || !res.success) { showAlert(res && res.message || 'ไม่พบข้อมูลปีงบประมาณ', 'error'); return; }
+            if (!res || !res.success) { hideLoading(); showAlert(res && res.message || 'ไม่พบข้อมูลปีงบประมาณ', 'error'); return; }
             const lines = Array.isArray(res.stats) ? res.stats.filter(function (b) {
                 return !agency || String(b.department || '').trim() === agency;
             }) : [];
@@ -780,12 +782,18 @@ function dashboardFiscalLoadYear_(year) {
             const used = lines.reduce((sum, b) => sum + (Number(b.used) || 0), 0);
             google.script.run.withSuccessHandler(function (studentRes) {
                 if (requestId !== dashboardFiscalRequest) return;
-                const student = studentRes && studentRes.success ? studentRes.stats : {hiredCountGlobal:null,hiredCountLocal:null,notHiredCount:null,eligibleCount:null,totalRegisteredGlobal:null};
+                if (!studentRes || !studentRes.success) {
+                    hideLoading();
+                    showAlert(studentRes && studentRes.message || 'โหลดสถิติย้อนหลังไม่สำเร็จ', 'error');
+                    return;
+                }
+                const student = studentRes.stats;
+                hideLoading();
                 dashboardFiscalRender_(Object.assign({allocated:allocated,used:used,balance:allocated-used},student),Number(year),true,agency);
-            }).withFailureHandler(function () {
+            }).withFailureHandler(function (err) {
                 if (requestId !== dashboardFiscalRequest) return;
-                dashboardFiscalRender_({allocated:allocated,used:used,balance:allocated-used},Number(year),true,agency);
-            }).getFiscalStudentStats(dashboardFiscalToken_(), Number(year));
+                hideLoading(); showAlert('โหลดสถิติย้อนหลังไม่สำเร็จ: ' + err.message, 'error');
+            }).getFiscalEligibleDashboardStats(dashboardFiscalToken_(), Number(year));
         }).withFailureHandler(function (err) {
             if (requestId !== dashboardFiscalRequest) return;
             hideLoading(); showAlert(err.message, 'error');
