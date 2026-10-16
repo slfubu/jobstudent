@@ -753,7 +753,12 @@ function dashboardFiscalLoadYear_(year) {
                     const yearly = studentRes && studentRes.success ? studentRes.stats : {
                         hiredCountGlobal:null,hiredCountLocal:null,notHiredCount:null,eligibleCount:null,totalRegisteredGlobal:null
                     };
-                    dashboardFiscalRender_(Object.assign({},res.stats,yearly),active,false,agency);
+                    const budgetRows = (Array.isArray(res.stats) ? res.stats : []).filter(function(b) {
+                        return !agency || String(b.department || '').trim() === agency;
+                    });
+                    const allocated = budgetRows.reduce((sum,b)=>sum+(Number(b.allocated)||0),0);
+                    const used = budgetRows.reduce((sum,b)=>sum+(Number(b.used)||0),0);
+                    dashboardFiscalRender_(Object.assign({allocated:allocated,used:used,balance:allocated-used},yearly),active,false,agency);
                 }).withFailureHandler(function(err) {
                     if (requestId !== dashboardFiscalRequest) return;
                     hideLoading(); showAlert('โหลดสถิติรายปีไม่สำเร็จ: '+err.message,'error');
@@ -761,7 +766,7 @@ function dashboardFiscalLoadYear_(year) {
             }).withFailureHandler(function(err) {
                 if (requestId !== dashboardFiscalRequest) return;
                 hideLoading(); showAlert(err.message,'error');
-            }).getFinancialOverview(currentUser.id,agency);
+            }).getFiscalBudgetOverview(dashboardFiscalToken_(), active);
             return;
         }
         google.script.run.withSuccessHandler(function (res) {
