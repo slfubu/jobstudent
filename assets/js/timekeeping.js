@@ -1320,132 +1320,78 @@ function onDeleteTimeLog(logId) {
     });
 }
 
-// Download a real PDF instead of invoking the browser's print dialog.
-let timesheetPdfBusy = false;
-function ensureTimeSheetPdfLibrary() {
-    // The application already loads pdf-lib. jsPDF is NOT required.
-    if (typeof window.html2pdf === 'function' && window.PDFLib?.PDFDocument) return Promise.resolve();
-    if (window.__timesheetPdfLibLoading) return window.__timesheetPdfLibLoading;
-    function loadScript(url, isReady, label) {
-        if (isReady()) return Promise.resolve();
-        return new Promise((resolve, reject) => {
-            const script = document.createElement('script');
-            script.src = url;
-            script.onload = () => isReady() ? resolve() : reject(new Error('โหลดไฟล์ ' + label + ' แล้วแต่ไม่พบฟังก์ชัน'));
-            script.onerror = () => reject(new Error('ไม่สามารถโหลด ' + label + ' ได้'));
-            document.head.appendChild(script);
-        });
-    }
-    window.__timesheetPdfLibLoading = Promise.all([
-        loadScript('https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js',
-            () => typeof window.html2pdf === 'function', 'html2pdf'),
-        loadScript('https://unpkg.com/pdf-lib/dist/pdf-lib.min.js',
-            () => !!window.PDFLib?.PDFDocument, 'pdf-lib')
-    ]).then(() => undefined).catch(error => {
-        window.__timesheetPdfLibLoading = null;
-        throw error;
-    });
-    return window.__timesheetPdfLibLoading;
-}
-
+// Browser print preview with a small settings dialog (no CDN or PDF generation library).
 async function printTimeSheet() {
-    if (timesheetPdfBusy) return;
-    const source = document.getElementById('printTimeSheetArea');
-    if (!source) return showAlert('ไม่พบแบบฟอร์มใบลงเวลา', 'error');
-    const rows = source.querySelectorAll('#printTableBody tr');
-    if (!rows.length) return showAlert('ยังไม่มีรายการลงเวลาสำหรับสร้าง PDF', 'error');
-
-    timesheetPdfBusy = true;
-    const button = document.getElementById('downloadTimesheetPdfBtn');
-    const originalLabel = button?.innerHTML;
-    if (button) { button.disabled = true; button.textContent = 'กำลังสร้าง PDF...'; }
-    let host = null;
+    const area = document.getElementById('printTimeSheetArea');
+    if (!area) return showAlert('ไม่พบแบบฟอร์มใบลงเวลา', 'error');
+    if (typeof Swal === 'undefined') return showAlert('ไม่สามารถเปิดหน้าต่างตั้งค่าพิมพ์ได้', 'error');
+    const result = await Swal.fire({
+        title: 'ตั้งค่าพิมพ์ใบลงเวลา',
+        html: `<div style="text-align:left;display:grid;gap:12px;font-size:15px">
+          <label>ขนาดกระดาษ<select id="tsPaper" class="swal2-select" style="display:block;width:100%;margin:5px 0 0"><option value="A4">A4</option><option value="A3">A3</option><option value="letter">Letter</option></select></label>
+          <label>แนวกระดาษ<select id="tsOrientation" class="swal2-select" style="display:block;width:100%;margin:5px 0 0"><option value="portrait">แนวตั้ง</option><option value="landscape">แนวนอน</option></select></label>
+          <label>ระยะขอบ<select id="tsMargin" class="swal2-select" style="display:block;width:100%;margin:5px 0 0"><option value="5">แคบ (5 มม.)</option><option value="12">ปกติ (12 มม.)</option><option value="20">กว้าง (20 มม.)</option></select></label>
+          <label>ขนาดตัวอักษร<select id="tsFont" class="swal2-select" style="display:block;width:100%;margin:5px 0 0"><option value="12">12 pt</option><option value="14" selected>14 pt</option><option value="16">16 pt</option></select></label>
+        </div>`,
+        showCancelButton: true,
+        confirmButtonText: 'เปิดหน้าพิมพ์ / บันทึกเป็น PDF',
+        cancelButtonText: 'ยกเลิก',
+        focusConfirm: false,
+        preConfirm: () => ({
+            paper: document.getElementById('tsPaper').value,
+            orientation: document.getElementById('tsOrientation').value,
+            margin: Number(document.getElementById('tsMargin').value),
+            font: Number(document.getElementById('tsFont').value)
+        })
+    });
+    if (!result.isConfirmed) return;
+    const opts = result.value;
+    const css = document.createElement('style');
+    css.id = 'timesheetPrintSettings';
+    css.textContent = `@media print {
+      @page { size: ${opts.paper} ${opts.orientation}; margin: ${opts.margin}mm !important; }
+      body.print-mode-timesheet #printTimeSheetArea {
+        box-sizing: border-box !important; position: absolute !important; top: 0 !important; left: 0 !important;
+        width: 100% !important; max-width: 100% !important; min-width: 0 !important;
+        padding: 0 !important; margin: 0 !important;
+      }
+      body.print-mode-timesheet #printTimeSheetArea,
+      body.print-mode-timesheet #printTimeSheetArea * {
+        font-family: 'Sarabun', 'TH Sarabun PSK', sans-serif !important;
+        font-size: ${opts.font}pt !important;
+        line-height: 1.25 !important;
+        box-sizing: border-box !important;
+      }
+      body.print-mode-timesheet #printTimeSheetArea .report-table {
+        width: 100% !important; max-width: 100% !important;
+        table-layout: fixed !important; border-collapse: collapse !important;
+      }
+      body.print-mode-timesheet #printTimeSheetArea .report-table th,
+      body.print-mode-timesheet #printTimeSheetArea .report-table td {
+        white-space: normal !important; overflow-wrap: anywhere !important;
+        padding: 3px 2px !important; vertical-align: middle !important;
+      }
+      body.print-mode-timesheet #printTimeSheetArea .report-table tr { break-inside: avoid !important; }
+    }`;
+    document.head.appendChild(css);
+    document.body.classList.add('print-mode-timesheet');
+    let cleaned = false;
+    const cleanup = () => {
+        if (cleaned) return;
+        cleaned = true;
+        document.body.classList.remove('print-mode-timesheet');
+        css.remove();
+        window.removeEventListener('afterprint', cleanup);
+    };
+    window.addEventListener('afterprint', cleanup);
     try {
-        await ensureTimeSheetPdfLibrary();
-        if (document.fonts && document.fonts.ready) await document.fonts.ready;
-        // Render at a stable full width. The entire resulting canvas is embedded
-        // as ONE image on ONE A4 page; html2pdf's page slicing is not used.
-        const layoutWidth = 1050;
-        host = document.createElement('div');
-        host.style.cssText = `position:fixed;left:-20000px;top:0;width:${layoutWidth}px;background:#fff;z-index:-1;overflow:visible;`;
-        const doc = source.cloneNode(true);
-        doc.id = 'timesheetPdfDocument';
-        doc.style.cssText = `display:block!important;visibility:visible!important;position:static!important;width:${layoutWidth}px!important;max-width:none!important;min-width:0!important;padding:0!important;margin:0!important;border:none!important;box-shadow:none!important;background:#fff!important;`;
-        const css = document.createElement('style');
-        css.textContent = `
-          #timesheetPdfDocument, #timesheetPdfDocument * { font-family:'Sarabun',sans-serif!important;box-sizing:border-box!important;color:#000!important; }
-          #timesheetPdfDocument { font-size:14px!important;line-height:1.23!important; }
-          #timesheetPdfDocument .report-header { margin:0 0 8px!important;padding:0!important; }
-          #timesheetPdfDocument .report-header h3 {font-size:19px!important;line-height:1.3!important;text-align:center!important;margin:0!important;padding:0!important;}
-          #timesheetPdfDocument > div:nth-child(2) { margin:6px 0 10px!important;font-size:15px!important;line-height:1.4!important; }
-          #timesheetPdfDocument > div:nth-child(2) > div {gap:15px!important;flex-wrap:wrap!important;}
-          #timesheetPdfDocument .report-table {width:100%!important;min-width:0!important;max-width:100%!important;table-layout:fixed!important;border-collapse:collapse!important;margin:0!important;}
-          #timesheetPdfDocument .report-table th,#timesheetPdfDocument .report-table td {font-size:14px!important;line-height:1.2!important;padding:5px 3px!important;border:1px solid #000!important;vertical-align:middle!important;white-space:normal!important;overflow-wrap:anywhere!important;word-break:normal!important;height:auto!important;}
-          #timesheetPdfDocument .report-table th:nth-child(1) {width:5%!important;}
-          #timesheetPdfDocument .report-table th:nth-child(2) {width:11%!important;}
-          #timesheetPdfDocument .report-table th:nth-child(3),#timesheetPdfDocument .report-table th:nth-child(4) {width:8%!important;}
-          #timesheetPdfDocument .report-table th:nth-child(5) {width:9%!important;}
-          #timesheetPdfDocument .report-table th:nth-child(6) {width:11%!important;}
-          #timesheetPdfDocument .report-table th:nth-child(7) {width:35%!important;}
-          #timesheetPdfDocument .report-table th:nth-child(8) {width:13%!important;}
-          #timesheetPdfDocument .report-table tbody td:nth-child(7) {text-align:left!important;}
-          #timesheetPdfDocument > div:nth-last-child(2) {margin-top:10px!important;font-size:13px!important;line-height:1.35!important;}
-          #timesheetPdfDocument > div:last-child {margin-top:25px!important;padding:0 20px!important;gap:18px!important;font-size:13px!important;}
-          #timesheetPdfDocument > div:last-child > div {max-width:49%!important;min-width:0!important;overflow-wrap:anywhere!important;}
-          #timesheetPdfDocument > div:last-child > div > div:first-child {height:8px!important;margin-bottom:5px!important;}
-        `;
-        host.appendChild(css);
-        host.appendChild(doc);
-        document.body.appendChild(host);
-        // Remove inherited fixed heights on old print rows, which otherwise cause overlapping.
-        doc.querySelectorAll('.report-table tbody tr,.report-table tbody td').forEach(node => {
-            node.style.height = 'auto';
-            node.style.minHeight = '0';
-            node.style.maxHeight = 'none';
-        });
-        // html2pdf Worker uses its bundled html2canvas internally, avoiding the missing-global error.
-        const worker = window.html2pdf().set({
-            margin:0, html2canvas:{scale:1.75,backgroundColor:'#fff',useCORS:true,
-                scrollX:0,scrollY:0,windowWidth:layoutWidth,logging:false},
-            pagebreak:{mode:[]}
-        }).from(doc).toCanvas();
-        const canvas = await worker.get('canvas');
-        if (!canvas.width || !canvas.height) throw new Error('ไม่สามารถสร้างภาพใบลงเวลาได้');
-        // Embed the whole canvas as a single JPEG on a single A4 PDF page.
-        // This uses PDFLib, already loaded by index.html (GAS) and login.js (GitHub Pages).
-        const pdfDoc = await window.PDFLib.PDFDocument.create();
-        const page = pdfDoc.addPage([595.2756, 841.8898]); // A4 in PDF points
-        const jpg = await pdfDoc.embedJpg(canvas.toDataURL('image/jpeg', 0.94));
-        const ptPerMm = 72 / 25.4;
-        const margin = 5 * ptPerMm;
-        const usableW = page.getWidth() - 2 * margin;
-        const usableH = page.getHeight() - 2 * margin;
-        const ratio = Math.min(usableW / jpg.width, usableH / jpg.height);
-        const drawW = jpg.width * ratio;
-        const drawH = jpg.height * ratio;
-        page.drawImage(jpg, {x:(page.getWidth()-drawW)/2, y:page.getHeight()-margin-drawH,
-            width:drawW, height:drawH});
-        const pdfBytes = await pdfDoc.save();
-        const blob = new Blob([pdfBytes], {type:'application/pdf'});
-        const url = URL.createObjectURL(blob);
-        const studentId = String(document.getElementById('printId')?.textContent || 'student').trim().replace(/[^0-9a-zA-Z_-]/g,'_');
-        const month = String(document.getElementById('printMonth')?.textContent || 'month').trim().replace(/[\\/:*?"<>|\s]+/g,'_');
-        const link = document.createElement('a');
-        link.href = url;
-        link.download = `ใบลงเวลา_${studentId}_${month}.pdf`;
-        document.body.appendChild(link);
-        link.click();
-        link.remove();
-        setTimeout(() => URL.revokeObjectURL(url), 60000);
-
-    } catch (error) {
-        console.error('Time sheet PDF export failed:',error);
-        showAlert('ไม่สามารถสร้าง PDF (รุ่นแก้ไข v4): ' + (error?.message || error),'error');
-    } finally {
-        if (host) host.remove();
-        if (button) { button.disabled = false; button.innerHTML = originalLabel; }
-        timesheetPdfBusy = false;
+        window.print();
+    } catch (err) {
+        cleanup();
+        showAlert('เปิดหน้าพิมพ์ไม่สำเร็จ: ' + err.message, 'error');
     }
+    // Browser implementations may not emit afterprint if the dialog is blocked.
+    // Let normal afterprint restore the page; no asynchronous removal before print.
 }
 
 function printReportArea() {
