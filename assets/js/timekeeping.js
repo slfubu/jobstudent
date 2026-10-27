@@ -1476,7 +1476,7 @@ function printBudgetOfficialReport() {
         if (hasWelfareData) reportData.push(welfareAgg);
 
         // เรียงลำดับหน่วยงาน
-        const customOrder = ["งานบริหารทั่วไป", "งานศิษย์เก่าสัมพันธ์", "งานพัฒนานักศึกษา", "งานกีฬาและนันทนาการ", "งานสวัสดิการนักศึกษา", "งานวินัยและสวัสดิภาพนักศึกษา", "งบสำรอง"];
+        const customOrder = ["งานอำนวยการ", "งานศิษย์เก่าสัมพันธ์", "งานพัฒนานักศึกษา", "งานกีฬาและนันทนาการ", "งานสวัสดิการนักศึกษา", "งานวินัยและสวัสดิภาพนักศึกษา", "งบสำรอง"];
         reportData.sort((a, b) => {
             let idxA = customOrder.indexOf(a.department);
             let idxB = customOrder.indexOf(b.department);
