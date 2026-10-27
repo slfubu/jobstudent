@@ -1323,32 +1323,25 @@ function onDeleteTimeLog(logId) {
 // Download a real PDF instead of invoking the browser's print dialog.
 let timesheetPdfBusy = false;
 function ensureTimeSheetPdfLibrary() {
-    // html2pdf.bundle exposes window.html2pdf, but DOES NOT reliably expose
-    // its internal html2canvas or jsPDF as global functions. Load both explicitly.
-    if (typeof window.html2canvas === 'function' && typeof window.jspdf?.jsPDF === 'function') {
-        return Promise.resolve();
-    }
+    // html2pdf.bundle has its own internal html2canvas. Do not use window.html2canvas.
+    if (typeof window.html2pdf === 'function' && typeof window.jspdf?.jsPDF === 'function') return Promise.resolve();
     if (window.__timesheetPdfLibLoading) return window.__timesheetPdfLibLoading;
-    function loadExternalPdfScript(url, isReady, name) {
-        if (isReady()) return Promise.resolve();
+    function loadLibrary(url, ready, name) {
+        if (ready()) return Promise.resolve();
         return new Promise((resolve, reject) => {
             const script = document.createElement('script');
             script.src = url;
-            script.async = true;
-            script.onload = () => isReady() ? resolve() : reject(new Error('โหลด ' + name + ' แล้วแต่ไลบรารีไม่พร้อมใช้งาน'));
-            script.onerror = () => reject(new Error('โหลด ' + name + ' ไม่สำเร็จ กรุณาตรวจสอบอินเทอร์เน็ตหรือการบล็อก CDN'));
+            script.onload = () => ready() ? resolve() : reject(new Error('ไม่พบ ' + name + ' หลังโหลดสคริปต์'));
+            script.onerror = () => reject(new Error('โหลด ' + name + ' ไม่สำเร็จ ตรวจสอบการบล็อก CDN'));
             document.head.appendChild(script);
         });
     }
     window.__timesheetPdfLibLoading = Promise.all([
-        loadExternalPdfScript('https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js',
-            () => typeof window.html2canvas === 'function', 'html2canvas'),
-        loadExternalPdfScript('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.2/jspdf.umd.min.js',
+        loadLibrary('https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js',
+            () => typeof window.html2pdf === 'function', 'html2pdf'),
+        loadLibrary('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.2/jspdf.umd.min.js',
             () => typeof window.jspdf?.jsPDF === 'function', 'jsPDF')
-    ]).then(() => undefined).catch(error => {
-        window.__timesheetPdfLibLoading = null;
-        throw error;
-    });
+    ]).then(() => undefined).catch(error => { window.__timesheetPdfLibLoading = null; throw error; });
     return window.__timesheetPdfLibLoading;
 }
 
@@ -1407,8 +1400,13 @@ async function printTimeSheet() {
             node.style.minHeight = '0';
             node.style.maxHeight = 'none';
         });
-        const canvas = await window.html2canvas(doc, {scale:1.75,backgroundColor:'#fff',useCORS:true,
-            scrollX:0,scrollY:0,windowWidth:layoutWidth,logging:false});
+        // html2pdf Worker uses its bundled html2canvas internally, avoiding the missing-global error.
+        const worker = window.html2pdf().set({
+            margin:0, html2canvas:{scale:1.75,backgroundColor:'#fff',useCORS:true,
+                scrollX:0,scrollY:0,windowWidth:layoutWidth,logging:false},
+            pagebreak:{mode:[]}
+        }).from(doc).toCanvas();
+        const canvas = await worker.get('canvas');
         if (!canvas.width || !canvas.height) throw new Error('ไม่สามารถสร้างภาพใบลงเวลาได้');
         const { jsPDF } = window.jspdf;
         const pdf = new jsPDF({orientation:'portrait',unit:'mm',format:'a4',compress:true});
@@ -1424,7 +1422,7 @@ async function printTimeSheet() {
         pdf.save(`ใบลงเวลา_${studentId}_${month}.pdf`);
     } catch (error) {
         console.error('Time sheet PDF export failed:',error);
-        showAlert('ไม่สามารถสร้าง PDF: ' + (error?.message || error),'error');
+        showAlert('ไม่สามารถสร้าง PDF (รุ่นแก้ไข v3): ' + (error?.message || error),'error');
     } finally {
         if (host) host.remove();
         if (button) { button.disabled = false; button.innerHTML = originalLabel; }
