@@ -459,125 +459,111 @@ function backToDisbursedMaster() {
 }
 
 
-// --- 3. บันทึกข้อมูล (แก้ไขชื่อตัวแปรให้ตรงหัวตาราง) ---
-    document.getElementById('paymentInfoForm').addEventListener('submit', (e) => {
+// PromptPay: show persistent saved status after confirmed server response.
+let paymentInfoSaving = false;
+function updatePaymentUIState() {
+    const bankInput = document.getElementById('userBankName');
+    const promptInput = document.getElementById('userPromptPay');
+    const btnSave = document.getElementById('btnSavePayment');
+    const btnEdit = document.getElementById('btnEditPayment');
+    const statusAlert = document.getElementById('paymentStatusAlert');
+    if (!bankInput || !promptInput || !currentUser) return;
+
+    const bank = String(currentUser.BankName || currentUser.bankname || currentUser.bankName || '').trim();
+    const prompt = String(currentUser.PromptPay || currentUser.promptpay || currentUser.promptPay || '').replace(/\s/g, '');
+    const saved = Boolean(bank) && /^(?:\d{10}|\d{13})$/.test(prompt);
+    if (saved) {
+        bankInput.value = bank;
+        promptInput.value = prompt;
+        promptInput.type = 'password';
+        bankInput.disabled = true;
+        promptInput.disabled = true;
+        bankInput.style.backgroundColor = '#e9ecef';
+        promptInput.style.backgroundColor = '#e9ecef';
+        if (statusAlert) {
+            statusAlert.style.display = 'block';
+            statusAlert.innerHTML = '<i class="material-icons" style="vertical-align:sub;">check_circle</i> <b>บันทึกข้อมูลพร้อมเพย์เรียบร้อยแล้ว</b> <span>คุณสามารถกดแก้ไขข้อมูลได้</span>';
+        }
+    } else {
+        bankInput.disabled = false;
+        promptInput.disabled = false;
+        promptInput.type = 'text';
+        bankInput.style.backgroundColor = '#fff';
+        promptInput.style.backgroundColor = '#fff';
+        if (statusAlert) statusAlert.style.display = 'none';
+    }
+    if (btnSave) { btnSave.style.display = saved ? 'none' : 'inline-block'; btnSave.disabled = false; }
+    if (btnEdit) btnEdit.style.display = saved ? 'inline-block' : 'none';
+}
+
+// Do not attach more than one submit handler (prevent duplicated writes).
+const paymentInfoForm = document.getElementById('paymentInfoForm');
+if (paymentInfoForm && !paymentInfoForm.dataset.promptpayBound) {
+    paymentInfoForm.dataset.promptpayBound = 'true';
+    paymentInfoForm.addEventListener('submit', (e) => {
         e.preventDefault();
-        
-        const bankName = document.getElementById('userBankName').value;
+        if (paymentInfoSaving) return;
+        const bankName = document.getElementById('userBankName').value.trim();
         const promptPay = document.getElementById('userPromptPay').value.replace(/\s+/g, '');
-
-        if (!/^(\d{10}|\d{13})$/.test(promptPay)) {
-            showAlert('กรุณาระบุเลขพร้อมเพย์เป็นตัวเลข 10 หรือ 13 หลัก', 'error');
+        if (!bankName || !/^(?:\d{10}|\d{13})$/.test(promptPay)) {
+            showAlert('กรุณาเลือกธนาคาร และระบุเลขพร้อมเพย์ให้ถูกต้อง (10 หรือ 13 หลัก)', 'error');
             return;
         }
-
-        // ตรวจสอบว่าระบบรู้จัก User หรือไม่
         if (!currentUser || !currentUser.id) {
-            showAlert('ไม่พบข้อมูลผู้ใช้งาน (Session หลุด) กรุณา Login ใหม่', 'error');
+            showAlert('ไม่พบข้อมูลผู้ใช้งาน กรุณาเข้าสู่ระบบใหม่', 'error');
             return;
         }
-
+        paymentInfoSaving = true;
+        const btnSave = document.getElementById('btnSavePayment');
+        if (btnSave) btnSave.disabled = true;
         showLoading();
-        
-        // รวมข้อมูลส่งไป Server (แก้ชื่อ Key ให้ตรงกับหัวตาราง Sheet: BankName, PromptPay)
-        const data = {
-            userId: currentUser.id,
-            BankName: bankName,   // ต้องตัวใหญ่ตามหัวตาราง
-            PromptPay: promptPay  // ต้องตัวใหญ่ตามหัวตาราง
-        };
-
+        const finish = () => { paymentInfoSaving = false; if (btnSave) btnSave.disabled = false; hideLoading(); };
         google.script.run.withSuccessHandler(res => {
-            hideLoading();
-            if(res.success) {
-                // อัปเดตข้อมูลฝั่งหน้าเว็บ
+            finish();
+            if (res && res.success) {
                 currentUser.BankName = bankName;
                 currentUser.PromptPay = promptPay;
+                // Keep aliases synchronized to prevent stale values when reopening the view.
+                currentUser.bankname = bankName;
+                currentUser.bankName = bankName;
+                currentUser.promptpay = promptPay;
+                currentUser.promptPay = promptPay;
                 sessionStorage.setItem('currentUser', JSON.stringify(currentUser));
-                
-                showAlert('บันทึกข้อมูลสำเร็จ', 'success');
                 updatePaymentUIState();
+                showAlert('บันทึกข้อมูลพร้อมเพย์สำเร็จ', 'success');
             } else {
-                showAlert(res.message, 'error');
+                showAlert((res && res.message) || 'บันทึกข้อมูลไม่สำเร็จ', 'error');
             }
-       }).withFailureHandler(err => {
-            hideLoading();
+        }).withFailureHandler(err => {
+            finish();
             showAlert('ไม่สามารถบันทึกข้อมูลพร้อมเพย์: ' + (err.message || err), 'error');
-       }).saveUserFinancialInfo(sessionStorage.getItem('sessionToken'), data); // 🛡️ แนบ Token
+        }).saveUserFinancialInfo(sessionStorage.getItem('sessionToken'), {
+            userId: currentUser.id, BankName: bankName, PromptPay: promptPay
+        });
     });
+}
 
-// --- ฟังก์ชันช่วยจัดการสถานะ UI (ล็อก/ปลดล็อก) ---
-    // ====================================================================
-// [HTML] ควบคุมการแสดงผลหน้าข้อมูลพร้อมเพย์
-// ====================================================================
+setupNavClick('navPaymentInfo', 'paymentInfoSection', () => {
+    if (currentUser) updatePaymentUIState();
+});
 
-    // --- 1. เมื่อกดเมนู: เช็คสถานะเพื่อล็อกหรือไม่ล็อก ---
-    setupNavClick('navPaymentInfo', 'paymentInfoSection', () => {
-        // เช็คว่ามี User อยู่ไหม
-        if (currentUser) {
-            // เติมค่าลงฟอร์ม (รองรับชื่อตัวแปรทั้งพิมพ์เล็กและพิมพ์ใหญ่)
-            const bp = currentUser.PromptPay || currentUser.promptpay || currentUser.promptPay || '';
-            const bn = currentUser.BankName || currentUser.bankname || currentUser.bankName || '';
-
-            document.getElementById('userBankName').value = bn;
-            document.getElementById('userPromptPay').value = bp;
-            
-            updatePaymentUIState(); 
-        }
-    });
-
-
-    function updatePaymentUIState() {
-        const bp = currentUser.PromptPay || currentUser.promptpay || currentUser.promptPay || '';
-        const bn = currentUser.BankName || currentUser.bankname || currentUser.bankName || ''
-        const hasData = /^\d{10}$|^\d{13}$/.test(String(bp).replace(/\s/g, '')) && String(bn).trim().length > 0;
-        const bankInput = document.getElementById('userBankName');
-        const promptInput = document.getElementById('userPromptPay');
-        const btnSave = document.getElementById('btnSavePayment');
-        const btnEdit = document.getElementById('btnEditPayment');
-        const statusAlert = document.getElementById('paymentStatusAlert');
-
-        if (hasData) {
-            bankInput.value = bn;
-            promptInput.value = bp;
-            promptInput.type = 'password'; // ซ่อนตัวเลขเต็มเมื่อบันทึกแล้ว
-            
-            bankInput.disabled = true;
-            promptInput.disabled = true;
-            bankInput.style.backgroundColor = "#e9ecef"; 
-            promptInput.style.backgroundColor = "#e9ecef";
-
-            if(statusAlert) {
-                statusAlert.style.display = 'block';
-                statusAlert.innerHTML = '<i class="material-icons" style="vertical-align: sub;">check_circle</i> <b>ท่านได้บันทึกข้อมูลเรียบร้อยแล้ว</b>';
-            }
-
-            if(btnSave) btnSave.style.display = 'none'; 
-            if(btnEdit) btnEdit.style.display = 'inline-block'; 
-
-        } else {
-            bankInput.disabled = false;
-            promptInput.disabled = false;
-            promptInput.type = 'text';
-            bankInput.style.backgroundColor = "#fff";
-            promptInput.style.backgroundColor = "#fff";
-
-            if(statusAlert) statusAlert.style.display = 'none';
-            if(btnEdit) btnEdit.style.display = 'none';
-            if(btnSave) btnSave.style.display = 'inline-block';
-        }
-    }
-
-
-    document.getElementById('btnEditPayment').addEventListener('click', () => {
-        document.getElementById('userBankName').disabled = false;
-        document.getElementById('userPromptPay').disabled = false;
-        document.getElementById('userPromptPay').type = 'text';
-        document.getElementById('userBankName').style.backgroundColor = "#fff";
-        document.getElementById('userPromptPay').style.backgroundColor = "#fff";
-        document.getElementById('btnEditPayment').style.display = 'none';
+const btnEditPayment = document.getElementById('btnEditPayment');
+if (btnEditPayment && !btnEditPayment.dataset.promptpayBound) {
+    btnEditPayment.dataset.promptpayBound = 'true';
+    btnEditPayment.addEventListener('click', () => {
+        const bank = document.getElementById('userBankName');
+        const prompt = document.getElementById('userPromptPay');
+        bank.disabled = false;
+        prompt.disabled = false;
+        prompt.type = 'text';
+        bank.style.backgroundColor = '#fff';
+        prompt.style.backgroundColor = '#fff';
+        btnEditPayment.style.display = 'none';
         document.getElementById('btnSavePayment').style.display = 'inline-block';
-        document.getElementById('paymentStatusAlert').style.display = 'none'; 
+        const alert = document.getElementById('paymentStatusAlert');
+        if (alert) alert.style.display = 'none';
     });
+}
 
     setupNavClick('navAdminReport', 'adminReportSection', () => {
         const selector = document.getElementById('reportJobSelector');
