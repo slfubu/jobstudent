@@ -1320,78 +1320,11 @@ function onDeleteTimeLog(logId) {
     });
 }
 
-// Browser print preview with a small settings dialog (no CDN or PDF generation library).
-async function printTimeSheet() {
-    const area = document.getElementById('printTimeSheetArea');
-    if (!area) return showAlert('ไม่พบแบบฟอร์มใบลงเวลา', 'error');
-    if (typeof Swal === 'undefined') return showAlert('ไม่สามารถเปิดหน้าต่างตั้งค่าพิมพ์ได้', 'error');
-    const result = await Swal.fire({
-        title: 'ตั้งค่าพิมพ์ใบลงเวลา',
-        html: `<div style="text-align:left;display:grid;gap:12px;font-size:15px">
-          <label>ขนาดกระดาษ<select id="tsPaper" class="swal2-select" style="display:block;width:100%;margin:5px 0 0"><option value="A4">A4</option><option value="A3">A3</option><option value="letter">Letter</option></select></label>
-          <label>แนวกระดาษ<select id="tsOrientation" class="swal2-select" style="display:block;width:100%;margin:5px 0 0"><option value="portrait">แนวตั้ง</option><option value="landscape">แนวนอน</option></select></label>
-          <label>ระยะขอบ<select id="tsMargin" class="swal2-select" style="display:block;width:100%;margin:5px 0 0"><option value="5">แคบ (5 มม.)</option><option value="12">ปกติ (12 มม.)</option><option value="20">กว้าง (20 มม.)</option></select></label>
-          <label>ขนาดตัวอักษร<select id="tsFont" class="swal2-select" style="display:block;width:100%;margin:5px 0 0"><option value="12">12 pt</option><option value="14" selected>14 pt</option><option value="16">16 pt</option></select></label>
-        </div>`,
-        showCancelButton: true,
-        confirmButtonText: 'เปิดหน้าพิมพ์ / บันทึกเป็น PDF',
-        cancelButtonText: 'ยกเลิก',
-        focusConfirm: false,
-        preConfirm: () => ({
-            paper: document.getElementById('tsPaper').value,
-            orientation: document.getElementById('tsOrientation').value,
-            margin: Number(document.getElementById('tsMargin').value),
-            font: Number(document.getElementById('tsFont').value)
-        })
-    });
-    if (!result.isConfirmed) return;
-    const opts = result.value;
-    const css = document.createElement('style');
-    css.id = 'timesheetPrintSettings';
-    css.textContent = `@media print {
-      @page { size: ${opts.paper} ${opts.orientation}; margin: ${opts.margin}mm !important; }
-      body.print-mode-timesheet #printTimeSheetArea {
-        box-sizing: border-box !important; position: absolute !important; top: 0 !important; left: 0 !important;
-        width: 100% !important; max-width: 100% !important; min-width: 0 !important;
-        padding: 0 !important; margin: 0 !important;
-      }
-      body.print-mode-timesheet #printTimeSheetArea,
-      body.print-mode-timesheet #printTimeSheetArea * {
-        font-family: 'Sarabun', 'TH Sarabun PSK', sans-serif !important;
-        font-size: ${opts.font}pt !important;
-        line-height: 1.25 !important;
-        box-sizing: border-box !important;
-      }
-      body.print-mode-timesheet #printTimeSheetArea .report-table {
-        width: 100% !important; max-width: 100% !important;
-        table-layout: fixed !important; border-collapse: collapse !important;
-      }
-      body.print-mode-timesheet #printTimeSheetArea .report-table th,
-      body.print-mode-timesheet #printTimeSheetArea .report-table td {
-        white-space: normal !important; overflow-wrap: anywhere !important;
-        padding: 3px 2px !important; vertical-align: middle !important;
-      }
-      body.print-mode-timesheet #printTimeSheetArea .report-table tr { break-inside: avoid !important; }
-    }`;
-    document.head.appendChild(css);
+// Restore original print behavior: print immediately with browser settings.
+function printTimeSheet() {
     document.body.classList.add('print-mode-timesheet');
-    let cleaned = false;
-    const cleanup = () => {
-        if (cleaned) return;
-        cleaned = true;
-        document.body.classList.remove('print-mode-timesheet');
-        css.remove();
-        window.removeEventListener('afterprint', cleanup);
-    };
-    window.addEventListener('afterprint', cleanup);
-    try {
-        window.print();
-    } catch (err) {
-        cleanup();
-        showAlert('เปิดหน้าพิมพ์ไม่สำเร็จ: ' + err.message, 'error');
-    }
-    // Browser implementations may not emit afterprint if the dialog is blocked.
-    // Let normal afterprint restore the page; no asynchronous removal before print.
+    window.print();
+    document.body.classList.remove('print-mode-timesheet');
 }
 
 function printReportArea() {
