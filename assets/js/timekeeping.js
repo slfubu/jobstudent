@@ -1339,11 +1339,9 @@ async function printTimeSheet() {
     if (timesheetPdfBusy) return;
     const source = document.getElementById('printTimeSheetArea');
     if (!source) return showAlert('ไม่พบแบบฟอร์มใบลงเวลา', 'error');
-    if (!source.querySelector('#printTableBody tr')) return showAlert('ยังไม่มีรายการลงเวลาสำหรับสร้าง PDF', 'error');
-    // Fixed export policy: A4 portrait, narrow 5 mm margins, 14 pt font.
-    const paper = 'a4';
-    const margin = 5;
-    const fontSize = 14;
+    const rows = source.querySelectorAll('#printTableBody tr');
+    if (!rows.length) return showAlert('ยังไม่มีรายการลงเวลาสำหรับสร้าง PDF', 'error');
+
     timesheetPdfBusy = true;
     const button = document.getElementById('downloadTimesheetPdfBtn');
     const originalLabel = button?.innerHTML;
@@ -1351,50 +1349,71 @@ async function printTimeSheet() {
     let host = null;
     try {
         await ensureTimeSheetPdfLibrary();
-        await document.fonts.ready;
+        if (document.fonts && document.fonts.ready) await document.fonts.ready;
+        // Render at a stable full width. The entire resulting canvas is embedded
+        // as ONE image on ONE A4 page; html2pdf's page slicing is not used.
+        const layoutWidth = 1050;
         host = document.createElement('div');
-        host.style.cssText = 'position:fixed;left:-30000px;top:0;z-index:-1;background:#fff;';
+        host.style.cssText = `position:fixed;left:-20000px;top:0;width:${layoutWidth}px;background:#fff;z-index:-1;overflow:visible;`;
         const doc = source.cloneNode(true);
         doc.id = 'timesheetPdfDocument';
-        // Override the original hidden/print-only layout. The export is a separate document.
-        doc.style.cssText = 'display:block!important;position:static!important;visibility:visible!important;width:100%!important;box-sizing:border-box!important;padding:0!important;margin:0!important;border:0!important;box-shadow:none!important;background:#fff!important;';
+        doc.style.cssText = `display:block!important;visibility:visible!important;position:static!important;width:${layoutWidth}px!important;max-width:none!important;min-width:0!important;padding:0!important;margin:0!important;border:none!important;box-shadow:none!important;background:#fff!important;`;
         const css = document.createElement('style');
         css.textContent = `
-            #timesheetPdfDocument, #timesheetPdfDocument * { font-family:'Sarabun',sans-serif!important; color:#000!important; box-sizing:border-box!important; }
-            #timesheetPdfDocument { font-size:${fontSize}pt!important; line-height:1.25!important; }
-            #timesheetPdfDocument .report-header h3 { font-size:${fontSize}pt!important; margin:0 0 6mm!important; text-align:center!important; }
-            #timesheetPdfDocument .report-table { width:100%!important; table-layout:fixed!important; border-collapse:collapse!important; font-size:${fontSize}pt!important; }
-            #timesheetPdfDocument .report-table td, #timesheetPdfDocument .report-table th { font-size:${fontSize}pt!important; line-height:1.15!important; padding:2px!important; overflow-wrap:anywhere!important; border:1px solid #000!important; vertical-align:middle!important; }
-            #timesheetPdfDocument thead { display:table-header-group; }
-            #timesheetPdfDocument tr { break-inside:avoid!important; page-break-inside:avoid!important; }
-            #timesheetPdfDocument .report-table tfoot { display:table-row-group; }
-            #timesheetPdfDocument > div { break-inside:avoid; }
+          #timesheetPdfDocument, #timesheetPdfDocument * { font-family:'Sarabun',sans-serif!important;box-sizing:border-box!important;color:#000!important; }
+          #timesheetPdfDocument { font-size:14px!important;line-height:1.23!important; }
+          #timesheetPdfDocument .report-header { margin:0 0 8px!important;padding:0!important; }
+          #timesheetPdfDocument .report-header h3 {font-size:19px!important;line-height:1.3!important;text-align:center!important;margin:0!important;padding:0!important;}
+          #timesheetPdfDocument > div:nth-child(2) { margin:6px 0 10px!important;font-size:15px!important;line-height:1.4!important; }
+          #timesheetPdfDocument > div:nth-child(2) > div {gap:15px!important;flex-wrap:wrap!important;}
+          #timesheetPdfDocument .report-table {width:100%!important;min-width:0!important;max-width:100%!important;table-layout:fixed!important;border-collapse:collapse!important;margin:0!important;}
+          #timesheetPdfDocument .report-table th,#timesheetPdfDocument .report-table td {font-size:14px!important;line-height:1.2!important;padding:5px 3px!important;border:1px solid #000!important;vertical-align:middle!important;white-space:normal!important;overflow-wrap:anywhere!important;word-break:normal!important;height:auto!important;}
+          #timesheetPdfDocument .report-table th:nth-child(1) {width:5%!important;}
+          #timesheetPdfDocument .report-table th:nth-child(2) {width:11%!important;}
+          #timesheetPdfDocument .report-table th:nth-child(3),#timesheetPdfDocument .report-table th:nth-child(4) {width:8%!important;}
+          #timesheetPdfDocument .report-table th:nth-child(5) {width:9%!important;}
+          #timesheetPdfDocument .report-table th:nth-child(6) {width:11%!important;}
+          #timesheetPdfDocument .report-table th:nth-child(7) {width:35%!important;}
+          #timesheetPdfDocument .report-table th:nth-child(8) {width:13%!important;}
+          #timesheetPdfDocument .report-table tbody td:nth-child(7) {text-align:left!important;}
+          #timesheetPdfDocument > div:nth-last-child(2) {margin-top:10px!important;font-size:13px!important;line-height:1.35!important;}
+          #timesheetPdfDocument > div:last-child {margin-top:25px!important;padding:0 20px!important;gap:18px!important;font-size:13px!important;}
+          #timesheetPdfDocument > div:last-child > div {max-width:49%!important;min-width:0!important;overflow-wrap:anywhere!important;}
+          #timesheetPdfDocument > div:last-child > div > div:first-child {height:8px!important;margin-bottom:5px!important;}
         `;
-        host.style.width = (paper === 'letter' ? 216 : 210) - 2 * margin + 'mm';
         host.appendChild(css);
         host.appendChild(doc);
         document.body.appendChild(host);
-        const studentId = String(document.getElementById('printId')?.textContent || 'student').trim().replace(/[^0-9a-zA-Z_-]/g, '_');
-        const month = String(document.getElementById('printMonth')?.textContent || 'month').trim().replace(/[\\/:*?"<>|\s]+/g, '_');
-        const filename = `ใบลงเวลา_${studentId}_${month}.pdf`;
-        await html2pdf().set({
-            margin: [margin, margin, margin, margin],
-            filename,
-            image: {type:'jpeg',quality:0.98},
-            html2canvas: {scale:2,useCORS:true,backgroundColor:'#ffffff',scrollX:0,scrollY:0,windowWidth:1200},
-            jsPDF: {unit:'mm',format:paper,orientation:'portrait',compress:true},
-            pagebreak: {mode:['css','legacy'],avoid:['tr']}
-        }).from(doc).save();
+        // Remove inherited fixed heights on old print rows, which otherwise cause overlapping.
+        doc.querySelectorAll('.report-table tbody tr,.report-table tbody td').forEach(node => {
+            node.style.height = 'auto';
+            node.style.minHeight = '0';
+            node.style.maxHeight = 'none';
+        });
+        const canvas = await window.html2canvas(doc, {scale:1.75,backgroundColor:'#fff',useCORS:true,
+            scrollX:0,scrollY:0,windowWidth:layoutWidth,logging:false});
+        if (!canvas.width || !canvas.height) throw new Error('ไม่สามารถสร้างภาพใบลงเวลาได้');
+        const { jsPDF } = window.jspdf;
+        const pdf = new jsPDF({orientation:'portrait',unit:'mm',format:'a4',compress:true});
+        const usableW = 200, usableH = 287; // A4 with fixed 5 mm margins
+        const aspect = canvas.width / canvas.height;
+        const outputW = Math.min(usableW, usableH * aspect);
+        const outputH = outputW / aspect;
+        const x = (210 - outputW) / 2;
+        const y = 5; // Anchor to top; never paginate or crop
+        pdf.addImage(canvas.toDataURL('image/jpeg',0.94),'JPEG',x,y,outputW,outputH,undefined,'FAST');
+        const studentId = String(document.getElementById('printId')?.textContent || 'student').trim().replace(/[^0-9a-zA-Z_-]/g,'_');
+        const month = String(document.getElementById('printMonth')?.textContent || 'month').trim().replace(/[\\/:*?"<>|\s]+/g,'_');
+        pdf.save(`ใบลงเวลา_${studentId}_${month}.pdf`);
     } catch (error) {
         console.error('Time sheet PDF export failed:',error);
-        showAlert('ไม่สามารถสร้าง PDF: ' + (error?.message || error), 'error');
+        showAlert('ไม่สามารถสร้าง PDF: ' + (error?.message || error),'error');
     } finally {
         if (host) host.remove();
         if (button) { button.disabled = false; button.innerHTML = originalLabel; }
         timesheetPdfBusy = false;
     }
 }
-
 
 function printReportArea() {
     var printContent = document.getElementById('printArea');
