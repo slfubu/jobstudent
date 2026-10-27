@@ -2002,7 +2002,6 @@ function renderSummaryGrid() {
         container.appendChild(card);
     });
 }
-// 4. ฟังก์ชันแสดงรายละเอียดในตาราง (Detail Table)
 function showDetailView(groupKey) {
     const group = groupedPayHistory[groupKey];
     if (!group) return;
