@@ -1323,15 +1323,32 @@ function onDeleteTimeLog(logId) {
 // Download a real PDF instead of invoking the browser's print dialog.
 let timesheetPdfBusy = false;
 function ensureTimeSheetPdfLibrary() {
-    if (window.html2pdf) return Promise.resolve();
+    // html2pdf.bundle exposes window.html2pdf, but DOES NOT reliably expose
+    // its internal html2canvas or jsPDF as global functions. Load both explicitly.
+    if (typeof window.html2canvas === 'function' && typeof window.jspdf?.jsPDF === 'function') {
+        return Promise.resolve();
+    }
     if (window.__timesheetPdfLibLoading) return window.__timesheetPdfLibLoading;
-    window.__timesheetPdfLibLoading = new Promise((resolve, reject) => {
-        const script = document.createElement('script');
-        script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js';
-        script.onload = () => window.html2pdf ? resolve() : reject(new Error('ไม่สามารถเปิดใช้ตัวสร้าง PDF'));
-        script.onerror = () => reject(new Error('โหลดชุดคำสั่งสร้าง PDF ไม่สำเร็จ กรุณาตรวจสอบอินเทอร์เน็ต'));
-        document.head.appendChild(script);
-    }).catch(error => { window.__timesheetPdfLibLoading = null; throw error; });
+    function loadExternalPdfScript(url, isReady, name) {
+        if (isReady()) return Promise.resolve();
+        return new Promise((resolve, reject) => {
+            const script = document.createElement('script');
+            script.src = url;
+            script.async = true;
+            script.onload = () => isReady() ? resolve() : reject(new Error('โหลด ' + name + ' แล้วแต่ไลบรารีไม่พร้อมใช้งาน'));
+            script.onerror = () => reject(new Error('โหลด ' + name + ' ไม่สำเร็จ กรุณาตรวจสอบอินเทอร์เน็ตหรือการบล็อก CDN'));
+            document.head.appendChild(script);
+        });
+    }
+    window.__timesheetPdfLibLoading = Promise.all([
+        loadExternalPdfScript('https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js',
+            () => typeof window.html2canvas === 'function', 'html2canvas'),
+        loadExternalPdfScript('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.2/jspdf.umd.min.js',
+            () => typeof window.jspdf?.jsPDF === 'function', 'jsPDF')
+    ]).then(() => undefined).catch(error => {
+        window.__timesheetPdfLibLoading = null;
+        throw error;
+    });
     return window.__timesheetPdfLibLoading;
 }
 
@@ -2002,6 +2019,7 @@ function renderSummaryGrid() {
         container.appendChild(card);
     });
 }
+// 4. ฟังก์ชันแสดงรายละเอียดในตาราง (Detail Table)
 function showDetailView(groupKey) {
     const group = groupedPayHistory[groupKey];
     if (!group) return;
