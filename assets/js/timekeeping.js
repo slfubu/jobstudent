@@ -334,6 +334,74 @@ function performAddRegular(validStudentId) {
     }).addRegularEmployeePermission(validStudentId, currentUser.faculty);
 }
 
+
+// Import regular permissions in bulk; parsing happens in the browser, checking happens on the server.
+let regularBulkFailures = [];
+function regularBulkLoadXlsx_() {
+  if (window.XLSX) return Promise.resolve();
+  if (window.regularXlsxPromise_) return window.regularXlsxPromise_;
+  window.regularXlsxPromise_ = new Promise((resolve,reject)=>{
+    const tag=document.createElement('script');
+    tag.src='https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js';
+    tag.onload=()=>window.XLSX?resolve():reject(new Error('โหลดตัวอ่าน Excel ไม่สำเร็จ'));
+    tag.onerror=()=>reject(new Error('ไม่สามารถโหลดตัวอ่าน Excel กรุณาตรวจสอบอินเทอร์เน็ต'));
+    document.head.appendChild(tag);
+  }).catch(err=>{window.regularXlsxPromise_=null;throw err;});
+  return window.regularXlsxPromise_;
+}
+async function importRegularExcel() {
+  const input=document.getElementById('regularBulkExcel');
+  const button=document.getElementById('regularBulkImportBtn');
+  const view=document.getElementById('regularBulkResult');
+  const download=document.getElementById('regularBulkFailedDownload');
+  if (!input || !input.files || !input.files.length) return showAlert('กรุณาเลือกไฟล์ Excel', 'error');
+  if (!/\.xlsx?$/i.test(input.files[0].name)) return showAlert('รองรับเฉพาะ .xlsx และ .xls', 'error');
+  if (!currentUser || currentUser.role!=='staff' || !currentUser.faculty) return showAlert('เฉพาะเจ้าหน้าที่ที่มีหน่วยงานเท่านั้น', 'error');
+  regularBulkFailures=[]; download.style.display='none';view.textContent='';button.disabled=true;
+  try {
+    await regularBulkLoadXlsx_();
+    const buffer=await input.files[0].arrayBuffer();
+    const book=XLSX.read(buffer,{type:'array'});
+    const sheet=book.Sheets[book.SheetNames[0]];
+    if (!sheet) throw new Error('ไม่พบแผ่นงานในไฟล์');
+    const rows=XLSX.utils.sheet_to_json(sheet,{header:1,raw:false,defval:''});
+    if (!rows.length) throw new Error('ไฟล์ไม่มีข้อมูล');
+    // First row may be a heading; skip recognized heading only.
+    const first=String((rows[0]||[])[0]||'').trim().toLowerCase();
+    const start=/^(student\s*id|studentid|รหัสนักศึกษา|รหัสนิสิต)$/i.test(first)?1:0;
+    const ids=rows.slice(start).map(r=>String((r||[])[0]??'').replace(/^'/,'').trim()).filter(Boolean);
+    if(!ids.length) throw new Error('ไม่พบรหัสนักศึกษาในคอลัมน์ A');
+    if(ids.length>1000) throw new Error('นำเข้าได้ไม่เกิน 1,000 รายการต่อครั้ง กรุณาแบ่งไฟล์');
+    const confirmed=await Swal.fire({title:'ยืนยันนำเข้า '+ids.length+' รายการ',
+      text:'เพิ่มสิทธิ์ให้หน่วยงาน '+currentUser.faculty,icon:'question',showCancelButton:true,
+      confirmButtonText:'นำเข้า',cancelButtonText:'ยกเลิก'});
+    if (!confirmed.isConfirmed) return;
+    showLoading();
+    const response=await new Promise((resolve,reject)=>google.script.run.withSuccessHandler(resolve).withFailureHandler(reject)
+      .importRegularEmployeePermissions(sessionStorage.getItem('sessionToken'),ids));
+    if(!response || !response.success) throw new Error((response&&response.message)||'บันทึกไม่สำเร็จ');
+    regularBulkFailures=Array.isArray(response.failures)?response.failures:[];
+    view.textContent='ทั้งหมด '+response.total+' รายการ | สำเร็จ '+response.imported+' รายการ | ไม่สำเร็จ '+response.failed+' รายการ';
+    if(regularBulkFailures.length) download.style.display='inline-block';
+    loadRegularEmployees();
+  } catch(err) {showAlert('นำเข้าไม่สำเร็จ: '+(err.message||String(err)),'error');}
+  finally {hideLoading();button.disabled=false;}
+}
+function downloadRegularFailed() {
+  if(!regularBulkFailures.length) return;
+  const csvSafe=v=>{
+    let s=String(v==null?'':v);
+    if(/^[=+@-]/.test(s)) s="'"+s; // prevent spreadsheet formula injection
+    return '"'+s.replace(/"/g,'""')+'"';
+  };
+  const lines=[['ลำดับในไฟล์','รหัสนักศึกษา','สาเหตุ'].map(csvSafe).join(',')];
+  regularBulkFailures.forEach(f=>lines.push([f.row,f.studentId,f.reason].map(csvSafe).join(',')));
+  const blob=new Blob(['\uFEFF'+lines.join('\r\n')],{type:'text/csv;charset=utf-8;'});
+  const url=URL.createObjectURL(blob),a=document.createElement('a');
+  a.href=url;a.download='regular_permission_failed.csv';document.body.appendChild(a);a.click();a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),1000);
+}
+
 // --- ฟังก์ชันโหลดรายชื่อพนักงานประจำ (แก้ไขใหม่) ---
 function loadRegularEmployees() {
     console.log("Loading regular employees...");
@@ -1476,7 +1544,7 @@ function printBudgetOfficialReport() {
         if (hasWelfareData) reportData.push(welfareAgg);
 
         // เรียงลำดับหน่วยงาน
-        const customOrder = ["งานอำนวยการ", "งานศิษย์เก่าสัมพันธ์", "งานพัฒนานักศึกษา", "กองพัฒนานักศึกษา", "งานกีฬาและนันทนาการ", "งานสวัสดิการนักศึกษา", "งานวินัยและสวัสดิภาพนักศึกษา", "งบสำรอง"];
+        const customOrder = ["งานอำนวยการ", "งานศิษย์เก่าสัมพันธ์", "งานพัฒนานักศึกษา", "งานกีฬาและนันทนาการ", "งานสวัสดิการนักศึกษา", "งานวินัยและสวัสดิภาพนักศึกษา", "งบสำรอง"];
         reportData.sort((a, b) => {
             let idxA = customOrder.indexOf(a.department);
             let idxB = customOrder.indexOf(b.department);
