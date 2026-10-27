@@ -34,7 +34,7 @@ const WELFARE_GROUP_NAME = "งานสวัสดิการนักศึ�
     let currentBudgetSource = 'internal'; 
     
     const DEPARTMENTS = [
-        "งานบริหารทั่วไป",
+        "งานอำนวยการ",
         "งานศิษย์เก่าสัมพันธ์",
         "งานพัฒนานักศึกษา",
         "งานกีฬาและนันทนาการ",
