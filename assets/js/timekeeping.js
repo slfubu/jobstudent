@@ -1,3 +1,42 @@
+// แปลงชื่อหน่วยงานเพื่อแสดงในเอกสารใบลงเวลาเท่านั้น ไม่แก้ข้อมูลในฐานข้อมูล
+function getTimesheetAgencyName(agency) {
+    const name = String(agency == null ? '' : agency).trim();
+    if (!name) return '-';
+    // หากเป็นชื่อที่จัดกลุ่มแล้ว ให้แสดงตามข้อมูลเดิม ไม่ใส่วงเล็บซ้ำ
+    if (/^.+\s*\(.+\)$/.test(name)) return name;
+
+    const normalizeAgency = value => String(value || '')
+        .normalize('NFC')
+        .replace(/[\s\u200B-\u200D\uFEFF]/g, '')
+        .replace(/ำ/g, 'ํา');
+    const groups = {
+        'กลุ่มงานสวัสดิการนักศึกษา': [
+            'ทุนการศึกษา',
+            'แนะแนวและให้คำปรึกษาสุขภาพจิต',
+            'จัดหางานและจ้างงานระหว่างเรียน',
+            'กองทุนเงินให้กู้ยืมเพื่อการศึกษา',
+            'งานวินัยและสวัสดิภาพนักศึกษา'
+        ],
+        'กองพัฒนานักศึกษา': [
+            'ผู้อำนวยการกอง'
+        ],
+        'กลุ่มงานพัฒนานักศึกษา': [
+            'งานพัฒนานักศึกษา',
+            'งานกีฬาและนันทนาการ'
+        ],
+        'กลุ่มงานศิษย์เก่าสัมพันธ์': [
+            'งานอำนวยการ',
+            'งานศิษย์เก่าสัมพันธ์'
+        ]
+    };
+    for (const [groupName, subDepartments] of Object.entries(groups)) {
+        const matched = subDepartments.find(sub => normalizeAgency(sub) === normalizeAgency(name));
+        if (matched) return `${groupName} (${matched})`;
+    }
+    // ชื่อหน่วยงานระดับกอง/กลุ่มที่ไม่มีงานย่อย หรือชื่อที่ไม่อยู่ในโครงสร้าง
+    return name;
+}
+
 // --- 1. ตั้งค่าเมนู ---
 setupNavClick('navSpecialPayroll', 'specialPayrollSection', () => {
     resetSpecialForm();
@@ -953,9 +992,7 @@ function renderTimeTable(logs) {
                 document.getElementById('printSignName').textContent = `${currentUser.prefix || ''}${currentUser.firstName} ${currentUser.lastName}`;
             }
             if (document.getElementById('printAgency')) {
-                document.getElementById('printAgency').textContent = (typeof getOfficialAgencyName === 'function')
-                    ? getOfficialAgencyName(currentUser.regularAgency)
-                    : (currentUser.regularAgency || '-');
+                document.getElementById('printAgency').textContent = getTimesheetAgencyName(currentUser.regularAgency);
             }
         }
 
