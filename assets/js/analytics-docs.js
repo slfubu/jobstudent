@@ -562,6 +562,7 @@ function doVerifySearch() {
         if (res.success && res.data) {
             const d = res.data;
             currentVerifyDataCache = d; // เก็บข้อมูลไว้ใช้พิมพ์
+            loadFiscalYearStatus(d.studentId);
 
             if(notFoundMsg) notFoundMsg.style.display = 'none';
             resultArea.style.display = 'block';
@@ -586,6 +587,8 @@ function doVerifySearch() {
 
         } else {
             currentVerifyDataCache = null;
+            const fyBox = document.getElementById('vfFiscalYearStatus');
+            if (fyBox) fyBox.style.display = 'none';
             resultArea.style.display = 'none';
             if(notFoundMsg) notFoundMsg.style.display = 'block';
             showAlert('ไม่พบข้อมูลนักศึกษารหัสนี้', 'error');
@@ -1828,4 +1831,58 @@ function confirmCutBudget() {
             });
         }
     });
+}
+
+
+let latestFiscalStatusId = '';
+function loadFiscalYearStatus(studentId) {
+    const box = document.getElementById('vfFiscalYearStatus');
+    if (!box) return;
+    latestFiscalStatusId = String(studentId);
+    box.style.display = 'block';
+    box.textContent = 'กำลังตรวจสอบข้อมูลแยกตามปีงบประมาณ...';
+    const token = sessionStorage.getItem('sessionToken');
+    google.script.run.withSuccessHandler(res => {
+        if (latestFiscalStatusId !== String(studentId)) return;
+        box.replaceChildren();
+        const h = document.createElement('strong');
+        h.textContent = 'ผลการตรวจสอบรายปีงบประมาณ'; box.appendChild(h);
+        const note = document.createElement('div');
+        note.style.cssText = 'font-size:13px;color:#475569;margin:7px 0';
+        note.textContent = 'แยกข้อมูลลงทะเบียนประจำปี ออกจากหลักฐานรายการจ้างงาน/เบิกจ่ายใน Payroll (1 ต.ค.–30 ก.ย.)';
+        box.appendChild(note);
+        if (!res || !res.success) {
+            const line=document.createElement('p'); line.textContent = res?.message || 'ตรวจสอบข้อมูลรายปีไม่สำเร็จ';box.appendChild(line);return;
+        }
+        if (!res.years || res.years.length === 0) {
+            const line=document.createElement('p');line.textContent='ไม่พบประวัติลงทะเบียนรายปีหรือรายการ Payroll ในข้อมูลที่ตรวจสอบ';box.appendChild(line);
+        } else {
+            const matched = res.years.filter(y=>y.payrollCount>0);
+            const summary=document.createElement('div');
+            summary.style.cssText='font-weight:600;margin:8px 0';
+            summary.textContent = matched.length ? 'พบประวัติ Payroll ปีงบประมาณ พ.ศ. ' + matched.map(y=>y.year).join(' และ ') : 'ไม่พบรายการ Payroll ที่ระบุปีได้';
+            box.appendChild(summary);
+            const select=document.createElement('select');
+            select.style.cssText='padding:8px;border-radius:6px;max-width:100%;margin:7px 0';
+            res.years.forEach(y=>{const opt=document.createElement('option');opt.value=String(y.year);opt.textContent='ปีงบประมาณ '+y.year;select.appendChild(opt);});
+            const details=document.createElement('div');details.style.cssText='padding:10px;background:white;border-radius:6px;line-height:1.7';
+            const render=()=>{
+                const y=res.years.find(v=>String(v.year)===select.value);
+                details.replaceChildren();
+                const lines=[
+                    'ปีงบประมาณ พ.ศ. '+y.year,
+                    'ลงทะเบียนประจำปี: '+(y.registered?'พบข้อมูล'+(y.registrationStatus?' ('+y.registrationStatus+')':''):'ไม่พบข้อมูล'),
+                    'รายการ Payroll: '+y.payrollCount+' รายการ',
+                    'ยอดรายการ Payroll: '+Number(y.amount||0).toLocaleString('th-TH')+' บาท',
+                    'หน่วยงาน: '+(y.departments.join(', ')||'-')
+                ];
+                lines.forEach(x=>{const div=document.createElement('div');div.textContent=x;details.appendChild(div);});
+            };
+            select.addEventListener('change',render);box.appendChild(select);box.appendChild(details);render();
+        }
+        if(res.unknownDates){const warning=document.createElement('p');warning.style.color='#b45309';warning.textContent='มี '+res.unknownDates+' รายการใน Payroll ที่ระบุปีไม่ได้ จึงไม่ถูกจัดเข้าปีใด';box.appendChild(warning);}
+        if(res.sources && (!res.sources.payroll||!res.sources.registration)){const warning=document.createElement('p');warning.style.color='#b45309';warning.textContent='ฐานข้อมูลบางส่วนยังไม่มีชีต Payroll หรือ FiscalRegistrations ผลรายปีอาจไม่ครบ';box.appendChild(warning);}
+    }).withFailureHandler(err=>{
+        if(latestFiscalStatusId===String(studentId))box.textContent='ไม่สามารถตรวจสอบปีงบประมาณ: '+(err.message||err);
+    }).getStudentFiscalParticipation(token, studentId);
 }
