@@ -315,35 +315,88 @@ function loadStudentFinance() {
         const container = document.getElementById('studentPayContainer');
         container.innerHTML = '';
 
-        // ประวัติแบบเบิกแยกจาก Timekeeping/Payroll โดยสิ้นเชิง
+        // แบบเบิกจากงานที่สมัคร: รายละเอียดจริงอ่านจาก API ที่ตรวจสอบเจ้าของแบบเบิก
         const claimItems = Array.isArray(res.claimHistory) ? res.claimHistory : [];
         const claimContainer = document.getElementById('studentClaimHistoryContainer');
         const noClaims = document.getElementById('noStudentClaimHistory');
         if (claimContainer) claimContainer.innerHTML = '';
         const escapeClaimText = value => String(value == null ? '' : value)
-            .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-            .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+            .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
         const monthsThai = ['มกราคม','กุมภาพันธ์','มีนาคม','เมษายน','พฤษภาคม','มิถุนายน',
             'กรกฎาคม','สิงหาคม','กันยายน','ตุลาคม','พฤศจิกายน','ธันวาคม'];
         const validClaims = claimItems.filter(item => Number(item.count) > 0);
         if (noClaims) noClaims.style.display = validClaims.length ? 'none' : 'block';
         validClaims.forEach(item => {
             if (!claimContainer) return;
-            const parts = String(item.month || '').split('-');
+            const month = String(item.month || '');
+            const parts = month.split('-');
             const year = Number(parts[0]);
             const mi = Number(parts[1]) - 1;
             const monthText = mi >= 0 && mi < 12 && year > 1900
-                ? monthsThai[mi] + ' ' + (year > 2400 ? year : year + 543)
-                : String(item.month || '-');
-            const card = document.createElement('div');
-            card.className = 'card';
-            card.style.cssText = 'border:1px solid #dbe4ee;border-radius:12px;margin-bottom:12px;padding:16px;background:#fff;';
-            card.innerHTML = '<div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">' +
-                '<div><strong>' + escapeClaimText(monthText) + '</strong>' +
-                '<div style="font-size:13px;color:#64748b;margin-top:4px">' + (Number(item.count) || 0) + ' รายการที่ยืนยัน</div></div>' +
-                '<span style="color:#15803d;font-weight:600">' + escapeClaimText(item.status || 'ยืนยันแบบเบิกแล้ว') + '</span>' +
-                '</div>';
+                ? monthsThai[mi] + ' ' + (year > 2400 ? year : year + 543) : month;
+            const card = document.createElement('details');
+            card.className = 'finance-month-card student-claim-detail-card';
+            card.style.cssText = 'border:1px solid #dbe4ee;border-radius:12px;margin-bottom:12px;padding:16px;background:#fff';
+            card.innerHTML = '<summary style="cursor:pointer;display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between">' +
+                '<strong>' + escapeClaimText(monthText) + ' — ' + Number(item.count) + ' รายการ</strong>' +
+                '<span style="color:#15803d;font-weight:600">✓ ยืนยันแบบเบิกแล้ว</span></summary>' +
+                '<div class="claim-month-content" style="margin-top:12px;color:#64748b">กดเปิดเพื่อดูรายละเอียดงาน...</div>';
             claimContainer.appendChild(card);
+            let loaded = false;
+            card.addEventListener('toggle', () => {
+                if (!card.open || loaded) return;
+                loaded = true;
+                const content = card.querySelector('.claim-month-content');
+                content.textContent = 'กำลังโหลดวันที่และช่วงเวลาที่เคยยืนยัน...';
+                const token = sessionStorage.getItem('sessionToken') || localStorage.getItem('sessionToken');
+                google.script.run.withSuccessHandler(result => {
+                    if (!result || !result.success) {
+                        content.textContent = (result && result.message) || 'ไม่สามารถโหลดรายละเอียดแบบเบิกได้';
+                        loaded = false;
+                        return;
+                    }
+                    const items = Array.isArray(result.items) ? result.items : [];
+                    if (!items.length) { content.textContent = 'ไม่พบรายการที่ยืนยัน'; return; }
+                    const slotMap = {morning:['08.30','12.00',3.5],afternoon:['13.00','16.30',3.5],evening:['16.30','20.00',3.5],multi:['08.30','16.30',7],full:['08.30','16.30',7]};
+                    const days = new Map();
+                    let totalHours = 0, totalAmount = 0;
+                    let tableRows = '';
+                    items.forEach(r => {
+                        const day = String(r.date || '').slice(0,10);
+                        const slot = String(r.slot || '').toLowerCase().trim();
+                        const times = slotMap[slot] || ['', '', 0];
+                        const arr = days.get(day) || [];
+                        arr.push({row:r, times}); days.set(day, arr);
+                    });
+                    days.forEach((dayItems, date) => {
+                        const hours = Math.min(7, dayItems.reduce((sum,x)=>sum+x.times[2],0));
+                        const amount = hours >= 7 ? 300 : hours >= 3.5 ? 150 : 0;
+                        totalHours += hours; totalAmount += amount;
+                        dayItems.forEach((entry,i)=>{
+                            const r=entry.row,t=entry.times;
+                            tableRows += '<tr><td style="padding:9px;border-bottom:1px solid #e5e7eb">'+escapeClaimText(i ? '' : date)+'</td>'+
+                                '<td style="padding:9px;border-bottom:1px solid #e5e7eb">'+escapeClaimText(r.title || '-')+'</td>'+
+                                '<td style="padding:9px;border-bottom:1px solid #e5e7eb">'+escapeClaimText(r.agency || '-')+'</td>'+
+                                '<td style="padding:9px;border-bottom:1px solid #e5e7eb">'+escapeClaimText(t[0] && t[1] ? t[0]+'–'+t[1]+' น.' : slot)+'</td>'+
+                                '<td style="padding:9px;border-bottom:1px solid #e5e7eb;text-align:right">'+(i ? '' : hours)+'</td>'+
+                                '<td style="padding:9px;border-bottom:1px solid #e5e7eb;text-align:right">'+(i ? '' : amount.toLocaleString('th-TH'))+'</td></tr>';
+                        });
+                    });
+                    content.innerHTML = '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px">' +
+                        '<thead><tr style="background:#f1f5f9"><th>วันที่</th><th>ชื่องาน</th><th>หน่วยงาน</th><th>ช่วงเวลาที่สมัคร</th><th>ชม.</th><th>ค่าตอบแทน (บาท)</th></tr></thead>' +
+                        '<tbody>'+tableRows+'</tbody></table></div>' +
+                        '<div style="text-align:right;margin:12px 0;color:#0f172a;font-weight:700">รวม '+totalHours+' ชั่วโมง · ยอดตามแบบเบิก '+totalAmount.toLocaleString('th-TH')+' บาท</div>' +
+                        '<button type="button" class="btn btn-primary claim-history-reprint"><i class="material-icons" style="vertical-align:middle;font-size:18px">print</i> พิมพ์แบบเบิกที่ยืนยันแล้ว</button>';
+                    const btn = content.querySelector('.claim-history-reprint');
+                    btn.addEventListener('click', () => {
+                        if (typeof printStudentJobMonth !== 'function') return showAlert('ไม่พบฟังก์ชันพิมพ์แบบเบิก กรุณาตรวจสอบ core.js', 'error');
+                        const monthItems = items.map(r=>({...r,dateKey:String(r.date || '').slice(0,10)}));
+                        if (typeof studentMonthlyJobCache !== 'undefined') studentMonthlyJobCache[month] = monthItems;
+                        printStudentJobMonth(month, null, monthItems.map(r=>r.id));
+                    });
+                }).withFailureHandler(err => { content.textContent = 'โหลดข้อมูลไม่สำเร็จ: ' + (err.message || err); loaded=false; })
+                  .getMyConfirmedClaimPrintItems(token, month);
+            });
         });
 
         if (!res.history || res.history.length === 0) {
