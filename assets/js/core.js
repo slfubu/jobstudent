@@ -1136,7 +1136,8 @@ function loadStudentMonthlyJobs() {
         (grouped[day.slice(0,7)] ||= []).push({...item,dateKey:day});
       });
       studentMonthlyJobCache = grouped;
-      const months = [...new Set([...Object.keys(grouped), ...Object.keys(studentMonthlyClaimStatusCache)])].sort().reverse();
+      // แสดงเฉพาะเดือนที่มีงานรับเข้าทำงานจริง ไม่แสดงเดือนที่มีเพียงสถานะแบบเบิกเก่า
+      const months = Object.keys(grouped).filter(month => Array.isArray(grouped[month]) && grouped[month].length > 0).sort().reverse();
       wrap.innerHTML = (skipped ? `<p style="color:#b45309">มี ${skipped} รายการที่อ่านวันที่ไม่ได้ กรุณาติดต่อเจ้าหน้าที่</p>` : '')+
         (months.length ? months.map(month => {
           const [y,m] = month.split('-').map(Number), data=grouped[month]||[];
