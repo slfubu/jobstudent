@@ -1,1769 +1,1331 @@
-// --- Setup Navigation for New Menus ---
-    setupNavClick('navReportDisbursed', 'reportDisbursedSection', () => loadDisbursedReport());
-    setupNavClick('navStudentFinance', 'studentFinanceSection', () => loadStudentFinance());
+const WELFARE_GROUP_NAME = "งานสวัสดิการนักศึกษา (รวมทุกหน่วยงานย่อย)";
+    const WELFARE_SUB_UNITS_LIST = [
+         "ทุนการศึกษา",
+         "กองทุนเงินให้กู้ยืมเพื่อการศึกษา",
+         "แนะแนวและให้คําปรึกษาสุขภาพจิต",
+         "จัดหางานและจ้างงานระหว่างเรียน",
+         "งานสวัสดิการนักศึกษา"
+    ];
 
-// --- Helper: Download CSV (แก้ไขภาษาต่างดาว) ---
-function exportTableToCSV(tableId, filename) {
-    let csv = [];
-    const rows = document.querySelectorAll(`#${tableId} tr`);
-    
-    for (let i = 0; i < rows.length; i++) {
-        let row = [], cols = rows[i].querySelectorAll("td, th");
-        
-        for (let j = 0; j < cols.length; j++) {
-            // ดึงข้อความและตัดช่องว่างหัวท้าย พร้อมใส่เครื่องหมายคำพูดครอบเพื่อป้องกัน error กรณีมี comma ในข้อความ
-            let data = cols[j].innerText.replace(/(\r\n|\n|\r)/gm, "").trim();
-            row.push('"' + data.replace(/"/g, '""') + '"'); 
+    const WELFARE_SUB_UNITS = [
+        "ทุนการศึกษา",
+        "กองทุนเงินให้กู้ยืมเพื่อการศึกษา",
+        "แนะแนวและให้คําปรึกษาสุขภาพจิต",
+        "จัดหางานและจ้างงานระหว่างเรียน"
+    ];
+
+    function getOfficialAgencyName(agencyName) {
+        if (WELFARE_SUB_UNITS.includes(agencyName)) {
+            return "งานสวัสดิการนักศึกษา";
         }
-        csv.push(row.join(","));
+        return agencyName; 
     }
 
-    // *** จุดสำคัญที่แก้: เพิ่ม \uFEFF เพื่อบอกว่าเป็น UTF-8 (แก้ภาษาไทยเพี้ยน) ***
-    const csvFile = new Blob(["\uFEFF" + csv.join("\n")], { type: "text/csv;charset=utf-8;" });
+    const DEPARTMENT_GROUPS = {
+        "งานสวัสดิการนักศึกษา": [ 
+            "ทุนการศึกษา",
+            "กองทุนเงินให้กู้ยืมเพื่อการศึกษา",
+            "แนะแนวและให้คําปรึกษาสุขภาพจิต",
+            "จัดหางานและจ้างงานระหว่างเรียน"
+        ]
+    };
     
-    const downloadLink = document.createElement("a");
-    downloadLink.download = filename;
+    let budgetDataCache = [];
+    let currentBudgetSource = 'internal'; 
     
-    // สร้าง Link สำหรับดาวน์โหลด
-    if (window.navigator.msSaveOrOpenBlob) {
-        // สำหรับ IE
-        window.navigator.msSaveOrOpenBlob(csvFile, filename);
-    } else {
-        // สำหรับ Browser ทั่วไป
-        downloadLink.href = window.URL.createObjectURL(csvFile);
-        downloadLink.style.display = "none";
-        document.body.appendChild(downloadLink);
-        downloadLink.click();
-        document.body.removeChild(downloadLink); // ลบ Link ทิ้งเมื่อกดแล้ว
-    }
-}
-
-function loadDisbursedReport() {
-    showLoading();
-    backToDisbursedMaster();    
-    
-    // 🛡️ ดึง Token จากระบบ
-    const token = sessionStorage.getItem('sessionToken');
-
-    google.script.run
-        .withSuccessHandler(list => {
-            hideLoading();                  
-            
-            // กรองเฉพาะสถานะที่เกี่ยวข้อง
-            const activeList = list.filter(item => 
-                item.status === 'รอตรวจสอบข้อมูล' || 
-                item.status === 'อนุมัติรอกองคลังโอนเงิน'
-            );
-
-            allDisbursedCache = activeList; 
-            
-            const tbody = document.querySelector('#disbursedMasterTable tbody');
-            const noDataMsg = document.getElementById('noDisbursedMasterData');
-            
-            // ปรับหัวตารางให้สอดคล้องกับข้อมูลใหม่
-            const theadRow = document.querySelector('#disbursedMasterTable thead tr');
-            if(theadRow) {
-                theadRow.innerHTML = `
-                    <th>หน่วยงาน</th>
-                    <th>จำนวนงานกิจกรรม</th>
-                    <th style="text-align: center;">จำนวนรายการจ่าย</th>
-                    <th style="text-align: right;">ยอดเงินรวม (บาท)</th>
-                    <th style="text-align: center;">จัดการ</th>
-                `;
-            }
-            
-            tbody.innerHTML = '';
-            
-            if (!Array.isArray(activeList) || activeList.length === 0) {
-                if(noDataMsg) noDataMsg.style.display = 'block';
-                return;
-            }
-            if(noDataMsg) noDataMsg.style.display = 'none';
-
-            // 1. จัดกลุ่มข้อมูลตาม "หน่วยงาน" (JobAgency)
-            const grouped = activeList.reduce((acc, item) => {
-                const key = item.jobAgency || item.department || 'ไม่ระบุหน่วยงาน'; 
-                
-                if (!acc[key]) {
-                    acc[key] = {
-                        groupName: key,
-                        totalAmount: 0,
-                        count: 0,
-                        items: [],
-                        jobTitles: new Set() 
-                    };
-                }
-                acc[key].totalAmount += (Number(item.amount) || 0);
-                acc[key].count += 1;
-                acc[key].items.push(item);
-                acc[key].jobTitles.add(item.jobTitle);
-                return acc;
-            }, {});
-            
-            // 2. แสดงผลในตาราง (เรียงตามชื่อหน่วยงาน)
-            const sortedKeys = Object.keys(grouped).sort();
-
-            sortedKeys.forEach(key => {
-                const group = grouped[key];
-                const row = tbody.insertRow();
-                
-                row.insertCell().innerHTML = `
-                    <div style="font-weight:bold; font-size:15px; color:#0d47a1;">
-                        <i class="material-icons" style="font-size:18px; vertical-align:text-bottom; margin-right:5px;">business</i>
-                        ${group.groupName}
-                    </div>
-                `;
-                
-                row.insertCell().innerHTML = `<span style="color:#555;">${group.jobTitles.size} กิจกรรม</span>`;
-                
-                const countCell = row.insertCell();
-                countCell.className = "text-center";
-                countCell.innerHTML = `<span class="badge-count" style="font-size:14px;">${group.count} รายการ</span>`;
-                
-                const amountCell = row.insertCell();
-                amountCell.className = "text-right font-weight-bold";
-                amountCell.innerHTML = `<span style="color:var(--secondary-color); font-size:16px;">${group.totalAmount.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>`;
-                
-                const actionCell = row.insertCell();
-                actionCell.style.textAlign = 'center';
-                const btn = document.createElement('button');
-                btn.className = 'btn btn-info';
-                btn.innerHTML = '<i class="material-icons" style="vertical-align:middle; font-size:18px;">visibility</i> ดูรายชื่อ';
-                btn.style.padding = '6px 12px';
-                
-                btn.onclick = () => openDisbursedDetail(group.groupName, "ภาพรวมรายการเบิกจ่าย", group.items);
-                
-                actionCell.appendChild(btn);
-            });
-        })
-        .withFailureHandler(err => {
-            hideLoading();
-            console.error(err);
-            Swal.fire('ข้อผิดพลาด', 'ไม่สามารถดึงข้อมูลรายงานได้: ' + err.message, 'error');
-        })
-        .getDisbursedHistory(token, currentUser.id); // 🛡️ แนบ Token ตรงนี้
-}
-
-// ----------------------------------------------------
-// --- Function 2: Open Detail View and Render Table (NEW) ---
-// ----------------------------------------------------
-
-function openDisbursedDetail(jobTitle, jobAgency, items) {
-    document.getElementById('disbursedMasterView').style.display = 'none';
-    document.getElementById('disbursedDetailView').style.display = 'block';
-
-    document.getElementById('detailDisbursedTitle').textContent = jobTitle;
-    document.getElementById('detailDisbursedAgency').textContent = jobAgency;
-    
-    currentDisbursedGroup = { key: jobTitle, data: items }; // เก็บข้อมูลกลุ่มปัจจุบัน
-    document.getElementById('searchDisbursedInput').value = ''; // Clear search
-    
-    // แสดงผลตาราง Detail View ครั้งแรก
-    renderDisbursedDetailTable(jobTitle, items, '');
-}
-
-
-function renderDisbursedDetailTable(jobTitle, items, searchQuery = '') {
-    const tbody = document.querySelector('#disbursedDetailTable tbody');
-    const noDataMsg = document.getElementById('noDisbursedDetailData');
-    
-    tbody.innerHTML = '';
-    
-    let filteredItems = items;
-    if (searchQuery) {
-        const query = searchQuery.toLowerCase().trim();
-        filteredItems = items.filter(item => {
-            const searchBase = `${item.studentName} ${item.studentId} ${item.jobTitle} ${item.workDate}`.toLowerCase();
-            return searchBase.includes(query);
-        });
-    }
-
-    if (filteredItems.length === 0) {
-        noDataMsg.style.display = 'block';
-        return;
-    }
-    noDataMsg.style.display = 'none';
-
-    filteredItems.forEach(item => {
-        const row = tbody.insertRow();
+    const DEPARTMENTS = [
+        "งานอำนวยการ",
+        "งานศิษย์เก่าสัมพันธ์",
+        "งานพัฒนานักศึกษา",
+        "งานกีฬาและนันทนาการ",
+        "งานวินัยและสวัสดิภาพนักศึกษา",
+        "งบสำรอง",
         
-        // 1. ชื่อนักศึกษา (รหัส)
-        row.insertCell().innerHTML = `<div style="font-weight:600; color:#333;">${item.studentName || '-'}</div><div style="font-size:12px; color:#888;">${item.studentId || '-'}</div>`;
+        "ทุนการศึกษา",
+        "กองทุนเงินให้กู้ยืมเพื่อการศึกษา",
+        "แนะแนวและให้คําปรึกษาสุขภาพจิต",
+        "จัดหางานและจ้างงานระหว่างเรียน" 
+    ];
+
+    function populateDepartments(selectId) {
+        const select = document.getElementById(selectId);
+        if(!select) return;
+        select.innerHTML = '<option value="">-- เลือกหน่วยงาน --</option>';
         
-        // 2. วันที่ปฏิบัติงาน
-        const workDateCell = row.insertCell();
-        workDateCell.textContent = item.workDate || '-'; // ใช้ค่าที่มาจาก Backend (หวังว่าเป็น dd/MM/yyyy)
-        workDateCell.className = "text-center";
-        
-        // 3. ยอดเงิน
-        const amountCell = row.insertCell();
-        const amountVal = Number(item.amount) || 0;
-        amountCell.innerHTML = `<span style="color:var(--secondary-color); font-size:14px;">${amountVal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>`;
-        amountCell.className = "text-right font-weight-bold";
-        
-        // 4. สถานะ
-        const statusCell = row.insertCell();
-        const statusText = item.status || 'จ่ายแล้ว';
-        statusCell.className = "text-center";
-let statusDisplay = '';
-if (statusText === 'อนุมัติรอกองคลังโอนเงิน') {
-    statusDisplay = `<span style="color:var(--success-color); font-weight:bold;"><i class="material-icons" style="font-size:14px; vertical-align:text-bottom;">check_circle</i> อนุมัติแล้ว</span>`;
-} else if (statusText === 'โอนเงินสำเร็จ') {
-    statusDisplay = `<span style="color:#0d47a1; font-weight:bold;"><i class="material-icons" style="font-size:14px; vertical-align:text-bottom;">paid</i> โอนเงินสำเร็จ</span>`;
-} else {
-    // รอตรวจสอบข้อมูล
-    statusDisplay = `<span style="color:var(--warning-color); font-weight:bold;"><i class="material-icons" style="font-size:14px; vertical-align:text-bottom;">schedule</i> ${statusText}</span>`;
-}
-row.insertCell().innerHTML = statusDisplay;
-
-
-        // 5. ปุ่มเครื่องมือ (สำหรับ Admin/Staff ที่มีสิทธิ์เปลี่ยนสถานะ)
-        const actionCell = row.insertCell();
-        actionCell.style.textAlign = 'center';
-        
-        // ปุ่มสำหรับ Admin/Staff ที่สามารถเปลี่ยนสถานะเป็น 'โอนเงินสำเร็จ' ได้
-        if (currentUser.role !== 'user') {
-             const changeStatusBtn = document.createElement('button');
-             changeStatusBtn.className = 'btn btn-info';
-             changeStatusBtn.innerHTML = '<i class="material-icons" style="font-size:16px;">edit</i>';
-             changeStatusBtn.style.padding = '5px 10px';
-             changeStatusBtn.style.fontSize = '12px';
-             
-             // ต้องหา RegId จาก items แต่ถ้า items มาจาก getDisbursedHistory จะไม่มี RegId
-             // หากต้องการเปลี่ยนสถานะต้องเพิ่ม RegId ใน getDisbursedHistory (Code.gs)
-             // ในตัวอย่างนี้ เราจะสมมติว่า item มี RegId อยู่แล้ว
-             const regId = item.regId || 'N/A'; // สมมติว่ามี RegId
-             
-             // ตัวอย่างการเรียกฟังก์ชันเปลี่ยนสถานะ (สมมติว่าคุณมี RegId ใน item)
-             if (regId !== 'N/A') {
-                changeStatusBtn.onclick = () => confirmChangeDisbursedStatus(regId, item.studentName, item.jobTitle, item.status);
-             } else {
-                 changeStatusBtn.disabled = true;
-             }
-             actionCell.appendChild(changeStatusBtn);
-        }
-    });
-}
-// ----------------------------------------------------
-// --- Function 3: Change Status Confirmation (NEW) ---
-// ----------------------------------------------------
-function confirmChangeDisbursedStatus(regId, studentName, jobTitle, currentStatus) {
-    Swal.fire({
-        title: 'อัปเดตสถานะการโอนเงิน',
-        html: `คุณกำลังเปลี่ยนสถานะของ<br><b>${studentName}</b> (งาน: ${jobTitle})<br>สถานะปัจจุบัน: <b>${currentStatus}</b>`,
-        icon: 'info',
-        input: 'select',
-inputOptions: {
-    'รอตรวจสอบข้อมูล': 'รอตรวจสอบข้อมูล',
-    'อนุมัติรอกองคลังโอนเงิน': 'อนุมัติรอกองคลังโอนเงิน'
-},
-        inputValue: currentStatus,
-        showCancelButton: true,
-        confirmButtonText: 'ยืนยันการเปลี่ยนแปลง',
-        cancelButtonText: 'ยกเลิก'
-    }).then((result) => {
-        if (result.isConfirmed && result.value) {
-            const newStatus = result.value;
-            showLoading();
-            google.script.run
-                .withSuccessHandler(res => {
-                    hideLoading();
-                    if(res.success) {
-                        showAlert(`เปลี่ยนสถานะเป็น "${newStatus}" สำเร็จ`, 'success');
-                        // 1. อัปเดต Cache
-                        const index = allDisbursedCache.findIndex(item => item.regId === regId);
-                        if (index !== -1) {
-                            allDisbursedCache[index].status = newStatus;
-                        }
-                        // 2. Refresh Detail View
-                        if (currentDisbursedGroup) {
-                            // ใช้ key/data เดิมในการ refresh
-                            openDisbursedDetail(currentDisbursedGroup.key, currentDisbursedGroup.jobAgency, allDisbursedCache.filter(i => i.jobTitle === currentDisbursedGroup.key));
-                        }
-                    } else {
-                        showAlert(res.message, 'error');
-                    }
-                })
-                .updatePayrollStatus(regId, newStatus); 
-        }
-    });
-}
-
-function loadStudentFinance() {
-    showLoading();
-    google.script.run.withSuccessHandler(res => {
-        hideLoading();
-        if (!res.success) { showAlert('เกิดข้อผิดพลาด: ' + res.message, 'error'); return; }
-
-        // อัปเดตกล่องสถานะ 3 สีด้านบน
-        document.getElementById('stPendingTotal').innerText = res.orangeTotal.toLocaleString();
-        document.getElementById('stDisbursedTotal').innerText = res.greenTotal.toLocaleString();
-        document.getElementById('stGrandTotal').innerText = res.blueTotal.toLocaleString();
-
-        const container = document.getElementById('studentPayContainer');
-        container.innerHTML = '';
-
-        // Claims are separate from paid transactions. Do not add them to the totals.
-        const claimItems = Array.isArray(res.claimHistory) ? res.claimHistory : [];
-        if (claimItems.length) {
-            const escapeClaimText = value => String(value == null ? '' : value)
-                .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-                .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-            const claimSection = document.createElement('section');
-            claimSection.className = 'student-claim-history';
-            claimSection.style.cssText = 'margin-bottom:20px;padding:16px;border:1px solid #dbe4ee;border-radius:10px;background:#f8fbff;';
-            const monthsThai = ['มกราคม','กุมภาพันธ์','มีนาคม','เมษายน','พฤษภาคม','มิถุนายน',
-                'กรกฎาคม','สิงหาคม','กันยายน','ตุลาคม','พฤศจิกายน','ธันวาคม'];
-            const entries = claimItems.map(item => {
-                const parts = String(item.month || '').split('-');
-                const year = Number(parts[0]);
-                const mi = Number(parts[1]) - 1;
-                const monthText = mi >= 0 && mi < 12 && year > 1900
-                    ? monthsThai[mi] + ' ' + (year > 2400 ? year : year + 543)
-                    : String(item.month || '-');
-                return `<tr><td style="padding:9px;border-bottom:1px solid #ddd">${escapeClaimText(monthText)}</td>` +
-                    `<td style="padding:9px;border-bottom:1px solid #ddd;text-align:center">${Number(item.count) || 0} รายการ</td>` +
-                    `<td style="padding:9px;border-bottom:1px solid #ddd">${escapeClaimText(item.status || 'ยืนยันแบบเบิกแล้ว')}</td></tr>`;
-            }).join('');
-            claimSection.innerHTML = '<h3 style="margin:0 0 8px">ประวัติแบบเบิกจากงานที่สมัคร</h3>' +
-                '<p style="font-size:13px;color:#555;margin:0 0 10px">รายการที่นักศึกษายืนยันแล้ว (ยังไม่ใช่รายการโอนเงินสำเร็จ และไม่รวมในยอดรับเงิน)</p>' +
-                '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse">' +
-                '<thead><tr><th style="text-align:left;padding:9px">เดือนที่ทำงาน</th>' +
-                '<th style="padding:9px">รายการที่ยืนยัน</th><th style="text-align:left;padding:9px">สถานะแบบเบิก</th></tr></thead>' +
-                '<tbody>' + entries + '</tbody></table></div>';
-            container.appendChild(claimSection);
-        }
-
-        if (!res.history || res.history.length === 0) {
-            document.getElementById('noStudentPayHistory').style.display = claimItems.length ? 'none' : 'block';
-            return;
-        }
-        document.getElementById('noStudentPayHistory').style.display = 'none';
-
-        // ============================================================
-        // [Logic รวมยอด]
-        // ============================================================
-        const mergedHistory = [];
-        const mapKey = {};
-
-        res.history.forEach(h => {
-            // +++++ [จุดที่แก้ไข] บังคับใช้ formatDate เพื่อให้เป็นไทยเสมอ +++++
-            // ไม่ว่าค่าที่ส่งมาจะเป็น Tue Dec... หรือ 2025-12-30 ก็จะถูกแปลงเป็น "30 ธ.ค. 2568"
-            const dateShow = formatDate(h.date || h.workDate); 
-            // +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-            
-            // ใช้ วันที่ + สถานะ เป็นตัวจับคู่เพื่อรวมเงิน
-            const uniqueKey = dateShow + "|" + h.status;
-
-            if (mapKey[uniqueKey]) {
-                // เจอซ้ำ: บวกเงินเพิ่ม
-                let existingItem = mapKey[uniqueKey];
-                let oldAmt = parseFloat(String(existingItem.amount).replace(/,/g, '')) || 0;
-                let addAmt = parseFloat(String(h.amount).replace(/,/g, '')) || 0;
-                
-                existingItem.amount = oldAmt + addAmt;
-            } else {
-                // ใหม่: สร้างรายการ
-                let newItem = { ...h }; 
-                newItem.displayDate = dateShow; // บันทึกวันที่แบบไทยเก็บไว้แสดงผล
-                
-                mapKey[uniqueKey] = newItem;
-                mergedHistory.push(newItem);
-            }
-        });
-
-        // จัดกลุ่มรายเดือน
-        const groups = {};
-        
-        mergedHistory.forEach(h => {
-            // แปลงวันที่จาก displayDate (ที่เป็นไทยแล้ว) กลับเป็นเดือนเพื่อจัดกลุ่ม
-            let dateObj;
-            // เนื่องจาก formatDate คืนค่าเป็น "30 ธ.ค. 2569" เราต้อง parse กลับนิดหน่อยเพื่อนับเดือน
-            // หรือใช้วิธีง่ายๆ คือ parse จาก h.date (ค่าดิบ) อีกรอบเพื่อความแม่นยำในการจัดกลุ่ม
-            let rawDateStr = h.date || h.workDate;
-            if (rawDateStr) {
-                 // ใช้ parseDateString ช่วยแปลงค่าดิบ
-                 dateObj = parseDateString(rawDateStr);
-            }
-            if (!dateObj) dateObj = new Date(); 
-
-            let y = dateObj.getFullYear();
-            if (y < 2400) y += 543; 
-
-            const monthNames = ["มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน", "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"];
-            const monthKey = `${monthNames[dateObj.getMonth()]} ${y}`;
-
-            if (!groups[monthKey]) groups[monthKey] = { total: 0, items: [] };
-            groups[monthKey].items.push(h);
-
-            // คำนวณยอดรวมรายเดือน
-            if (h.status === 'โอนเงินสำเร็จ' || h.status === 'อนุมัติรอกองคลังโอนเงิน') {
-                groups[monthKey].total += parseFloat(String(h.amount).replace(/,/g, '')) || 0;
-            }
-        });
-
-        // แสดงผล
-        Object.keys(groups).forEach(monthKey => {
-            const group = groups[monthKey];
-            const card = document.createElement('div');
-            card.className = 'finance-month-card';
-
-            let rowsHtml = '';
-            group.items.forEach(item => {
-                let statusHtml = '';
-                const showTransferDate = item.transferDate ? `<br><small style="color:#0d47a1; font-weight:bold; font-size:12px;">เงินเข้าวันที่: ${formatDate(item.transferDate)}</small>` : '';
-
-                if (item.status === 'โอนเงินสำเร็จ') {
-                    statusHtml = `<span style="color:#2e7d32; font-weight:bold;"><i class="material-icons" style="font-size:14px; vertical-align:text-bottom;">check_circle</i> ได้รับเงินแล้ว</span>${showTransferDate}`;
-                } else if (item.status === 'อนุมัติรอกองคลังโอนเงิน') {
-                     if (item.transferDate) {
-                         statusHtml = `<span style="color:#f57c00; font-weight:bold;"><i class="material-icons" style="font-size:14px; vertical-align:text-bottom;">event</i> กองคลังกำหนดตั้งโอน</span>${showTransferDate}`;
-                     } else {
-                         statusHtml = `<span style="color:#f57c00; font-weight:bold;"><i class="material-icons" style="font-size:14px; vertical-align:text-bottom;">schedule</i> อนุมัติแล้ว รอกองคลังโอน</span>`;
-                     }
-                } else {
-                    statusHtml = `<span style="color:#757575;">${item.status}</span>`;
-                }
-
-                // ใช้วันที่แบบไทยที่เตรียมไว้แล้ว
-                const dateToShow = formatDate(item.workDate || item.date); 
-
-    rowsHtml += `<tr>
-        <td>${dateToShow}</td>  <td><div style="font-weight:600; color:#333;">${item.jobTitle || item.title}</div></td>
-        <td style="text-align:right; font-weight:700; color:#1a237e;">${parseFloat(item.amount).toLocaleString()}</td>
-        <td style="text-align:center;">${statusHtml}</td>
-    </tr>`;
-            });
-
-            card.innerHTML = `
-                <div class="finance-month-header">
-                    <div class="month-info-group">
-                        <div class="finance-month-title">${monthKey}</div>
-                        <div class="item-count-badge">${group.items.length} รายการ</div>
-                    </div>
-                    <div class="finance-month-total">
-                        <b>฿${group.total.toLocaleString()}</b>
-                        <i class="material-icons expand-icon">expand_more</i>
-                    </div>
-                </div>
-                <div class="finance-details" style="display:none;">
-                    <table>
-                        <thead>
-                            <tr>
-                                <th style="width:20%">วันที่ทำงาน</th>
-                                <th style="width:40%">ชื่องาน</th>
-                                <th style="width:15%; text-align:right;">จำนวนเงิน</th>
-                                <th style="width:25%; text-align:center;">สถานะ</th>
-                            </tr>
-                        </thead>
-                        <tbody>${rowsHtml}</tbody>
-                    </table>
-                </div>`;
-
-            const header = card.querySelector('.finance-month-header');
-            const details = card.querySelector('.finance-details');
-            const icon = card.querySelector('.expand-icon');
-
-            header.addEventListener('click', () => {
-                const isHidden = details.style.display === 'none';
-                details.style.display = isHidden ? 'block' : 'none';
-                icon.innerText = isHidden ? 'expand_less' : 'expand_more';
-            });
-
-            container.appendChild(card);
-        });
-    }).getStudentFinancialStats(sessionStorage.getItem('sessionToken'), currentUser.id); // 🛡️ แนบ Token
-}
-
-    // --- Event Listener สำหรับการค้นหาในหน้า Detail ---
-document.getElementById('searchDisbursedInput').addEventListener('input', (e) => {
-    const query = e.target.value;
-    renderDisbursedDetailTable(currentDisbursedGroup.key, currentDisbursedGroup.data, query);
-});
-
-// --- ฟังก์ชันสำหรับกลับไปหน้า Master View ---
-function backToDisbursedMaster() {
-    document.getElementById('disbursedDetailView').style.display = 'none';
-    document.getElementById('disbursedMasterView').style.display = 'block';
-    currentDisbursedGroup = null; // Clear cache
-    document.getElementById('searchDisbursedInput').value = ''; // Clear search box
-}
-
-
-// --- 3. บันทึกข้อมูล (แก้ไขชื่อตัวแปรให้ตรงหัวตาราง) ---
-    document.getElementById('paymentInfoForm').addEventListener('submit', (e) => {
-        e.preventDefault();
-        
-        const bankName = document.getElementById('userBankName').value;
-        const promptPay = document.getElementById('userPromptPay').value.replace(/\s+/g, '');
-
-        if (!/^(\d{10}|\d{13})$/.test(promptPay)) {
-            showAlert('กรุณาระบุเลขพร้อมเพย์เป็นตัวเลข 10 หรือ 13 หลัก', 'error');
-            return;
-        }
-
-        // ตรวจสอบว่าระบบรู้จัก User หรือไม่
-        if (!currentUser || !currentUser.id) {
-            showAlert('ไม่พบข้อมูลผู้ใช้งาน (Session หลุด) กรุณา Login ใหม่', 'error');
-            return;
-        }
-
-        showLoading();
-        
-        // รวมข้อมูลส่งไป Server (แก้ชื่อ Key ให้ตรงกับหัวตาราง Sheet: BankName, PromptPay)
-        const data = {
-            userId: currentUser.id,
-            BankName: bankName,   // ต้องตัวใหญ่ตามหัวตาราง
-            PromptPay: promptPay  // ต้องตัวใหญ่ตามหัวตาราง
-        };
-
-        google.script.run.withSuccessHandler(res => {
-            hideLoading();
-            if(res.success) {
-                // อัปเดตข้อมูลฝั่งหน้าเว็บ
-                currentUser.BankName = bankName;
-                currentUser.PromptPay = promptPay;
-                sessionStorage.setItem('currentUser', JSON.stringify(currentUser));
-                
-                showAlert('บันทึกข้อมูลสำเร็จ', 'success');
-                updatePaymentUIState();
-            } else {
-                showAlert(res.message, 'error');
-            }
-       }).withFailureHandler(err => {
-            hideLoading();
-            showAlert('ไม่สามารถบันทึกข้อมูลพร้อมเพย์: ' + (err.message || err), 'error');
-       }).saveUserFinancialInfo(sessionStorage.getItem('sessionToken'), data); // 🛡️ แนบ Token
-    });
-
-// --- ฟังก์ชันช่วยจัดการสถานะ UI (ล็อก/ปลดล็อก) ---
-    // ====================================================================
-// [HTML] ควบคุมการแสดงผลหน้าข้อมูลพร้อมเพย์
-// ====================================================================
-
-    // --- 1. เมื่อกดเมนู: เช็คสถานะเพื่อล็อกหรือไม่ล็อก ---
-    setupNavClick('navPaymentInfo', 'paymentInfoSection', () => {
-        // เช็คว่ามี User อยู่ไหม
-        if (currentUser) {
-            // เติมค่าลงฟอร์ม (รองรับชื่อตัวแปรทั้งพิมพ์เล็กและพิมพ์ใหญ่)
-            const bp = currentUser.PromptPay || currentUser.promptpay || currentUser.promptPay || '';
-            const bn = currentUser.BankName || currentUser.bankname || currentUser.bankName || '';
-
-            document.getElementById('userBankName').value = bn;
-            document.getElementById('userPromptPay').value = bp;
-            
-            updatePaymentUIState(); 
-        }
-    });
-
-
-    function updatePaymentUIState() {
-        const bp = currentUser.PromptPay || currentUser.promptpay || currentUser.promptPay || '';
-        const bn = currentUser.BankName || currentUser.bankname || currentUser.bankName || ''
-        const hasData = /^\d{10}$|^\d{13}$/.test(String(bp).replace(/\s/g, '')) && String(bn).trim().length > 0;
-        const bankInput = document.getElementById('userBankName');
-        const promptInput = document.getElementById('userPromptPay');
-        const btnSave = document.getElementById('btnSavePayment');
-        const btnEdit = document.getElementById('btnEditPayment');
-        const statusAlert = document.getElementById('paymentStatusAlert');
-
-        if (hasData) {
-            bankInput.value = bn;
-            promptInput.value = bp;
-            promptInput.type = 'password'; // ซ่อนตัวเลขเต็มเมื่อบันทึกแล้ว
-            
-            bankInput.disabled = true;
-            promptInput.disabled = true;
-            bankInput.style.backgroundColor = "#e9ecef"; 
-            promptInput.style.backgroundColor = "#e9ecef";
-
-            if(statusAlert) {
-                statusAlert.style.display = 'block';
-                statusAlert.innerHTML = '<i class="material-icons" style="vertical-align: sub;">check_circle</i> <b>ท่านได้บันทึกข้อมูลเรียบร้อยแล้ว</b>';
-            }
-
-            if(btnSave) btnSave.style.display = 'none'; 
-            if(btnEdit) btnEdit.style.display = 'inline-block'; 
-
-        } else {
-            bankInput.disabled = false;
-            promptInput.disabled = false;
-            promptInput.type = 'text';
-            bankInput.style.backgroundColor = "#fff";
-            promptInput.style.backgroundColor = "#fff";
-
-            if(statusAlert) statusAlert.style.display = 'none';
-            if(btnEdit) btnEdit.style.display = 'none';
-            if(btnSave) btnSave.style.display = 'inline-block';
-        }
-    }
-
-
-    document.getElementById('btnEditPayment').addEventListener('click', () => {
-        document.getElementById('userBankName').disabled = false;
-        document.getElementById('userPromptPay').disabled = false;
-        document.getElementById('userPromptPay').type = 'text';
-        document.getElementById('userBankName').style.backgroundColor = "#fff";
-        document.getElementById('userPromptPay').style.backgroundColor = "#fff";
-        document.getElementById('btnEditPayment').style.display = 'none';
-        document.getElementById('btnSavePayment').style.display = 'inline-block';
-        document.getElementById('paymentStatusAlert').style.display = 'none'; 
-    });
-
-    setupNavClick('navAdminReport', 'adminReportSection', () => {
-        const selector = document.getElementById('reportJobSelector');
-        if(selector) selector.value = ""; 
-
-        document.getElementById('reportPreviewArea').style.display = 'none';
-        document.getElementById('noReportData').style.display = 'none';
-        document.getElementById('reportTableBody').innerHTML = '';
-        document.getElementById('repGrandTotal').textContent = '0.00';
-        loadReportJobOptions();
-    });
-
-let reportDataCache = []; 
-let currentReportJobInfo = {}; 
-let reportMonthDeptKey = '';
-
-// ============================================================
-// Generate Payment Report: แยกรายงานตามเดือนของ WorkDate
-// ไม่เพิ่มคอลัมน์เดือนใน Sheet — ใช้ WorkDate ที่มีอยู่แล้ว
-// ============================================================
-function getReportMonthMeta(item) {
-    if (!item) return null;
-
-    if (item.monthKey) {
-        return {
-            key: String(item.monthKey),
-            label: item.monthLabel || formatReportMonthLabel(String(item.monthKey))
-        };
-    }
-
-    const raw = item.workDate;
-    if (!raw || raw === '-') return null;
-
-    let year, month;
-    const s = String(raw).trim();
-
-    // dd/MM/yyyy
-    let m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
-    if (m) {
-        month = Number(m[2]);
-        year = Number(m[3]);
-        if (year > 2400) year -= 543;
-    } else {
-        // yyyy-MM-dd
-        m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
-        if (m) {
-            year = Number(m[1]);
-            month = Number(m[2]);
-            if (year > 2400) year -= 543;
-        } else {
-            const d = new Date(raw);
-            if (isNaN(d.getTime())) return null;
-            year = d.getFullYear();
-            month = d.getMonth() + 1;
-        }
-    }
-
-    if (!year || !month || month < 1 || month > 12) return null;
-    const key = `${year}-${String(month).padStart(2, '0')}`;
-    return { key, label: formatReportMonthLabel(key) };
-}
-
-function formatReportMonthLabel(monthKey) {
-    const months = ["มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน", "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"];
-    const parts = String(monthKey || '').split('-');
-    if (parts.length !== 2) return '-';
-    const year = Number(parts[0]);
-    const month = Number(parts[1]);
-    if (!year || month < 1 || month > 12) return '-';
-    return `${months[month - 1]} ${year + 543}`;
-}
-
-function isReportAgencyMatch(item, selectedDept) {
-    const itemAgency = item.jobAgency || item.department;
-    return selectedDept === WELFARE_GROUP_NAME
-        ? WELFARE_SUB_UNITS_LIST.includes(itemAgency)
-        : itemAgency === selectedDept;
-}
-
-function ensureReportMonthSelector() {
-    let select = document.getElementById('reportMonthSelector');
-    if (select) return select;
-
-    const jobContainer = document.getElementById('jobCheckboxContainer');
-    if (!jobContainer || !jobContainer.parentNode) return null;
-
-    const box = document.createElement('div');
-    box.id = 'reportMonthAutoBox';
-    box.style.cssText = 'margin-bottom:16px;padding:14px 16px;background:#fff8e1;border:1px solid #ffe082;border-radius:8px;';
-    box.innerHTML = `
-        <label for="reportMonthSelector" style="display:block;font-weight:600;margin-bottom:7px;color:#5d4037;">
-            ประจำเดือนที่ขอเบิก
-        </label>
-        <select id="reportMonthSelector" class="form-control" style="width:100%;max-width:360px;" onchange="renderJobCheckboxes()">
-            <option value="">-- เลือกประจำเดือน --</option>
-        </select>
-        <div id="reportMonthHint" style="font-size:12px;color:#795548;margin-top:6px;">
-            ระบบแสดงเฉพาะเดือนที่มีรายการอนุมัติรอกองคลังโอนเงินของหน่วยงานนี้
-        </div>`;
-
-    jobContainer.parentNode.insertBefore(box, jobContainer);
-    return box.querySelector('#reportMonthSelector');
-}
-
-function populateReportMonthOptions(selectedDept) {
-    const select = ensureReportMonthSelector();
-    if (!select) return '';
-
-    const monthMap = new Map();
-    reportDataCache.forEach(item => {
-        if (item.status !== 'อนุมัติรอกองคลังโอนเงิน') return;
-        if (!isReportAgencyMatch(item, selectedDept)) return;
-        const meta = getReportMonthMeta(item);
-        if (meta) monthMap.set(meta.key, meta.label);
-    });
-
-    const monthOptions = Array.from(monthMap.entries())
-        .map(([key, label]) => ({ key, label }))
-        .sort((a, b) => b.key.localeCompare(a.key));
-
-    select.innerHTML = '<option value="">-- เลือกประจำเดือน --</option>';
-    monthOptions.forEach(m => {
-        const opt = document.createElement('option');
-        opt.value = m.key;
-        opt.textContent = m.label;
-        select.appendChild(opt);
-    });
-
-    // ถ้ามีเพียงเดือนเดียว ให้เลือกให้อัตโนมัติ
-    if (monthOptions.length === 1) {
-        select.value = monthOptions[0].key;
-    }
-
-    return select.value;
-}
-
-function loadReportJobOptions() {
-    showLoading();
-    
-    document.getElementById('reportDeptSelector').innerHTML = '<option value="">-- กรุณาเลือกหน่วยงาน --</option>';
-    document.getElementById('jobSelectionArea').style.display = 'none';
-    document.getElementById('reportPreviewArea').style.display = 'none';
-    document.getElementById('noReportData').style.display = 'none';
-    reportMonthDeptKey = '';
-    const oldMonthBox = document.getElementById('reportMonthAutoBox');
-    if (oldMonthBox) oldMonthBox.remove();
-
-    const token = sessionStorage.getItem('sessionToken');
-
-    google.script.run.withSuccessHandler(list => {
-        hideLoading();
-        
-        if (!list || list.length === 0) {
-            return;
-        }
-
-        reportDataCache = list; 
-        const activeList = list.filter(item => item.status === 'อนุมัติรอกองคลังโอนเงิน');
-        const rawDepts = [...new Set(activeList.map(item => item.jobAgency || item.department))].sort();
-        const finalOptions = new Set();
-        let hasWelfare = false;
-
-        rawDepts.forEach(dept => {
-            if (WELFARE_SUB_UNITS_LIST.includes(dept)) {
-                hasWelfare = true; 
-            } else if(dept) {
-                finalOptions.add(dept);
-            }
-        });
-
-
-        const select = document.getElementById('reportDeptSelector');
-        if (hasWelfare) {
-            const opt = document.createElement('option');
-            opt.value = WELFARE_GROUP_NAME;
-            opt.textContent = WELFARE_GROUP_NAME;
-            opt.style.fontWeight = "bold";
-            opt.style.color = "var(--secondary-color)";
-            select.appendChild(opt);
-        }
-
-        // เพิ่มหน่วยงานอื่นๆ
-        finalOptions.forEach(dept => {
+        DEPARTMENTS.forEach(dept => {
             const opt = document.createElement('option');
             opt.value = dept;
             opt.textContent = dept;
             select.appendChild(opt);
         });
-
-    }).withFailureHandler(err => {
-        hideLoading();
-        showAlert('เกิดข้อผิดพลาดในการโหลดข้อมูล: ' + err.message, 'error');
-    }).getDisbursedHistory(token, currentUser.id); // 🛡️ แนบ Token ตรงนี้
-}
-
-// --- 2. แสดง Checkbox งานตามหน่วยงาน + เดือน (รองรับเบิกย้อนหลัง) ---
-function renderJobCheckboxes() {
-    const selectedDept = document.getElementById('reportDeptSelector').value;
-    const container = document.getElementById('jobCheckboxContainer');
-    const selectionArea = document.getElementById('jobSelectionArea');
-
-    container.innerHTML = '';
-    document.getElementById('reportPreviewArea').style.display = 'none';
-
-    if (!selectedDept) {
-        selectionArea.style.display = 'none';
-        reportMonthDeptKey = '';
-        const monthBox = document.getElementById('reportMonthAutoBox');
-        if (monthBox) monthBox.remove();
-        return;
     }
 
-    selectionArea.style.display = 'block';
-    const monthSelect = ensureReportMonthSelector();
-    if (!monthSelect) return;
-
-    // เปลี่ยนหน่วยงานเมื่อใด ให้สร้างรายการเดือนใหม่จากข้อมูลที่อนุมัติของหน่วยงานนั้น
-    if (reportMonthDeptKey !== selectedDept) {
-        reportMonthDeptKey = selectedDept;
-        populateReportMonthOptions(selectedDept);
-    }
-
-    const selectedMonthKey = monthSelect.value;
-    if (!selectedMonthKey) {
-        container.innerHTML = '<div style="text-align:center;color:#8d6e63;padding:16px;">กรุณาเลือก <b>ประจำเดือน</b> ที่ต้องการสร้างรายงาน</div>';
-        return;
-    }
-
-    // กรองตาม สถานะ + หน่วยงาน + เดือนของ WorkDate
-    const jobsInDept = reportDataCache.filter(item => {
-        if (item.status !== 'อนุมัติรอกองคลังโอนเงิน') return false;
-        if (!isReportAgencyMatch(item, selectedDept)) return false;
-        const meta = getReportMonthMeta(item);
-        return meta && meta.key === selectedMonthKey;
+    const Toast = Swal.mixin({
+        toast: true, position: 'top-end', showConfirmButton: false, timer: 3000, timerProgressBar: true,
+        didOpen: (toast) => { toast.addEventListener('mouseenter', Swal.stopTimer); toast.addEventListener('mouseleave', Swal.resumeTimer); }
     });
 
-    const uniqueJobs = [...new Set(jobsInDept.map(item => {
-        if (selectedDept === WELFARE_GROUP_NAME) {
-            return `[${item.jobAgency}] ${item.jobTitle}`;
+    function showAlert(message, type = 'success') {
+        if (type === 'error') {
+            Swal.fire({ icon: 'error', title: 'แจ้งเตือน', text: message, confirmButtonText: 'ตกลง', confirmButtonColor: 'var(--danger-color)' });
+        } else {
+            Toast.fire({ icon: type, title: message });
         }
-        return item.jobTitle;
-    }))].sort();
-
-    if (uniqueJobs.length === 0) {
-        container.innerHTML = '<div style="text-align:center; color:#999; padding:10px;">ไม่พบรายการที่ต้องออกรายงานในเดือนนี้</div>';
-    } else {
-        container.innerHTML = `
-            <div style="padding-bottom:10px; border-bottom:1px solid #eee; margin-bottom:10px;">
-                <label style="display: flex; align-items: center; cursor: pointer; font-weight: bold; color:#0d47a1;">
-                    <input type="checkbox" onchange="toggleAllJobs(this)" style="width: 18px; height: 18px; margin-right: 10px;">
-                    เลือกทั้งหมด (${uniqueJobs.length} งาน)
-                </label>
-            </div>
-        `;
-
-        uniqueJobs.forEach(displayTitle => {
-            let realValue = displayTitle;
-            let showText = displayTitle;
-
-            if (selectedDept === WELFARE_GROUP_NAME && displayTitle.startsWith('[')) {
-                const parts = displayTitle.split('] ');
-                if(parts.length > 1) realValue = parts[1];
-            }
-
-            const wrapper = document.createElement('div');
-            wrapper.style.padding = '5px 0';
-            wrapper.style.borderBottom = '1px solid #f0f0f0';
-            wrapper.innerHTML = `
-                <label style="display: flex; align-items: center; cursor: pointer; margin: 0; font-weight: normal;">
-                    <input type="checkbox" class="job-checkbox" value="${realValue}" data-display="${showText}" style="width: 18px; height: 18px; margin-right: 10px;">
-                    ${showText}
-                </label>
-            `;
-            container.appendChild(wrapper);
-        });
-    }
-}
-
-function toggleAllJobs(source) {
-    const checkboxes = document.querySelectorAll('.job-checkbox');
-    checkboxes.forEach(cb => cb.checked = source.checked);
-}
-
-// --- Helper: เลือกทั้งหมด / ล้างเลือก ---
-function toggleAllJobs() {
-    const checkboxes = document.querySelectorAll('.job-checkbox');
-    // เช็คว่ามีตัวไหนยังไม่ติ๊กไหม
-    const hasUnchecked = Array.from(checkboxes).some(cb => !cb.checked);
-    
-    checkboxes.forEach(cb => cb.checked = hasUnchecked);
-}
-
-// --- 3. สร้างรายงาน: บังคับเลือกเดือนก่อนสร้าง ---
-function generateFinancialReport() {
-    const selectedDept = document.getElementById('reportDeptSelector').value;
-    const monthSelect = document.getElementById('reportMonthSelector');
-    const selectedMonthKey = monthSelect ? monthSelect.value : '';
-
-    if (!selectedDept) {
-        showAlert('กรุณาเลือกหน่วยงาน', 'warning');
-        return;
-    }
-    if (!selectedMonthKey) {
-        showAlert('กรุณาเลือกประจำเดือนที่ต้องการสร้างรายงาน', 'warning');
-        return;
     }
 
-    const checkedBoxes = document.querySelectorAll('.job-checkbox:checked');
-    const selectedJobs = Array.from(checkedBoxes).map(cb => cb.value);
+    function showLoading() { document.getElementById('customLoader').style.display = 'flex'; }
+    function hideLoading() { document.getElementById('customLoader').style.display = 'none'; }
+    function closeModal(id) { document.getElementById(id).style.display = 'none'; }
 
-    if (selectedJobs.length === 0) {
-        showAlert('กรุณาเลือกงานอย่างน้อย 1 งาน', 'warning');
-        return;
-    }
+    const sidebar = document.getElementById('sidebar');
+    const mainContent = document.getElementById('mainContent');
+    const sidebarToggle = document.getElementById('sidebarToggle');
+    const authLayout = document.getElementById('authLayout');
+    const appLayout = document.getElementById('appLayout');
 
-    const uniqueNames = [...new Set(selectedJobs)];
-
-    if (uniqueNames.length === 1) {
-        renderReportWithTitle(selectedDept, selectedJobs, uniqueNames[0], selectedMonthKey);
-    } else {
-        const options = {};
-        uniqueNames.forEach(name => { options[name] = name; });
-
-        Swal.fire({
-            title: 'เลือกชื่องานสำหรับหัวรายงาน',
-            text: 'คุณเลือกงานที่มีชื่อต่างกัน กรุณาระบุชื่อที่จะแสดงบนหัวรายงาน',
-            input: 'select',
-            inputOptions: options,
-            inputValue: uniqueNames[0],
-            showCancelButton: true,
-            confirmButtonText: 'สร้างรายงาน',
-            cancelButtonText: 'ยกเลิก',
-            inputValidator: (value) => {
-                if (!value) return 'กรุณาเลือกชื่องาน';
-            }
-        }).then((result) => {
-            if (result.isConfirmed) {
-                renderReportWithTitle(selectedDept, selectedJobs, result.value, selectedMonthKey);
-            }
-        });
-    }
-}
-/* --- ฟังก์ชันคำนวณยอดเงินและอัปเดตหน้าจอ (หัวใจสำคัญของการตัดงบ) --- */
-function updatePrintPreview() {
-    // Helper: ฟังก์ชันจัดรูปแบบตัวเลข (ไม่มีทศนิยม)
-    const fmt = (num) => Number(num).toLocaleString('en-US', { maximumFractionDigits: 0 });
-
-    // 1. ดึงค่าจากช่อง Input (แผงควบคุมสีเหลือง)
-    const runNo = document.getElementById('inputRunNo').value;
-    const month = document.getElementById('inputMonth').value;
-    
-    // แปลงค่าเงินเป็นตัวเลข (ถ้าช่องว่างให้เป็น 0)
-    const allocated = parseFloat(document.getElementById('inputAllocated').value) || 0;
-    const prevBalance = parseFloat(document.getElementById('inputPrevBalance').value) || 0;
-    
-    // ดึงรหัสแหล่งเงิน
-    const sourceCode = document.getElementById('inputSourceCode').value; 
-
-    // 2. ดึงยอดเบิกจ่ายครั้งนี้จากตาราง (ลบลูกน้ำออกก่อนคำนวณ)
-    const currentText = document.getElementById('repGrandTotal').innerText.replace(/,/g, '');
-    const currentWithdrawal = parseFloat(currentText) || 0;
-
-    // 3. คำนวณยอดคงเหลือสุทธิ
-    const newBalance = prevBalance - currentWithdrawal;
-
-    // 4. แสดงผลลงในกระดาษพิมพ์ (ใช้ fmt เพื่อตัดทศนิยม)
-    // ส่วนบนขวา
-    if(document.getElementById('printRunNo')) document.getElementById('printRunNo').innerText = runNo;
-    
-    // ส่วนหัวกระดาษ
-    if(document.getElementById('printMonthLabel')) document.getElementById('printMonthLabel').innerText = month;
-    
-    // ส่วนสรุปยอดเงินด้านล่าง
-    if(document.getElementById('printAllocated')) document.getElementById('printAllocated').innerText = fmt(allocated);
-    if(document.getElementById('printPrevBalance')) document.getElementById('printPrevBalance').innerText = fmt(prevBalance);
-    if(document.getElementById('printCurrentWithdrawal')) document.getElementById('printCurrentWithdrawal').innerText = fmt(currentWithdrawal);
-    
-    // ยอดคงเหลือสุทธิ (แสดงค่าติดลบได้ถ้ามี)
-    if(document.getElementById('printNewBalance')) document.getElementById('printNewBalance').innerText = fmt(newBalance);
-
-    // รหัสแหล่งเงิน
-    if(document.getElementById('printSourceCodeDisplay')) document.getElementById('printSourceCodeDisplay').innerText = sourceCode;
-}
-
-// --- แก้ไขฟังก์ชัน renderReportWithTitle (ปรับสัดส่วนตามรูปภาพ และย่อชื่อคณะ) ---
-function renderReportWithTitle(selectedDept, selectedJobs, finalJobTitle, selectedMonthKey) {
-    const isWelfareMode = (selectedDept === WELFARE_GROUP_NAME);
-
-    // 1. กรองข้อมูลตาม หน่วยงาน + ชื่องาน + สถานะ + เดือนที่เลือก
-    selectedMonthKey = selectedMonthKey || (document.getElementById('reportMonthSelector') ? document.getElementById('reportMonthSelector').value : '');
-    const filtered = reportDataCache.filter(item => {
-        const meta = getReportMonthMeta(item);
-        return isReportAgencyMatch(item, selectedDept) &&
-               selectedJobs.includes(item.jobTitle) &&
-               item.status === 'อนุมัติรอกองคลังโอนเงิน' &&
-               meta && meta.key === selectedMonthKey;
+    sidebarToggle.addEventListener('click', () => {
+        if(window.innerWidth <= 768) { sidebar.classList.toggle('active'); } 
+        else { sidebar.classList.toggle('collapsed'); mainContent.classList.toggle('expanded'); }
     });
 
-    if(filtered.length === 0) {
-        document.getElementById('reportPreviewArea').style.display = 'none';
-        document.getElementById('noReportData').style.display = 'block';
+    function switchLayout(mode) {
+        if (mode === 'auth') { authLayout.style.display = 'block'; appLayout.style.display = 'none'; } 
+        else { authLayout.style.display = 'none'; appLayout.style.display = 'flex'; }
+    }
+
+    document.querySelectorAll('.submenu-toggle').forEach(toggle => {
+        toggle.addEventListener('click', function(e) {
+            e.preventDefault();
+            const submenu = this.nextElementSibling; 
+            const arrow = this.querySelector('.arrow-icon');
+            
+            if (submenu.style.display === 'none') {
+                submenu.style.display = 'block';
+                arrow.style.transform = 'rotate(180deg)'; 
+            } else {
+                submenu.style.display = 'none';
+                arrow.style.transform = 'rotate(0deg)'; 
+            }
+        });
+    });
+
+    function showSection(sectionId) {
+      document.querySelectorAll('.section').forEach(section => {
+          section.classList.remove('active');
+          section.style.display = ''; 
+      });
+      
+      const target = document.getElementById(sectionId);
+      if(target) {
+          target.classList.add('active');
+      }
+      
+      window.scrollTo(0, 0);
+
+      // 👇 แก้ไขบรรทัดนี้: เพิ่ม || sectionId === 'otpSection' เข้าไปในเงื่อนไข 👇
+      if (sectionId === 'loginSection' || sectionId === 'signupSection' || sectionId === 'checkEligibilitySection' || sectionId === 'otpSection') {
+        switchLayout('auth'); 
+      } else {
+        switchLayout('app');  
+      }
+    }
+
+    let currentUser = null;
+    let jobs = []; 
+    let selectedJobForApply = null;
+    let selectedTimeSlot = null;
+    let allDisbursedCache = []; 
+    let currentDisbursedGroup = null; 
+
+function formatDate(dateInput) {
+    if (!dateInput) return '-';
+    let str = String(dateInput).trim();
+    let d = new Date(str);
+    if (!isNaN(d.getTime())) {
+        const thMonths = [
+            "ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.",
+            "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."
+        ];
+        
+        let date = d.getDate();
+        let month = thMonths[d.getMonth()];
+        let year = d.getFullYear();
+
+        // แปลง ค.ศ. เป็น พ.ศ.
+        if (year < 2400) year += 543;
+
+        return `${date} ${month} ${year}`;
+    }
+
+    return str;
+}
+
+function ensureCurrentUserReady_() {
+    if (currentUser && typeof currentUser === 'object') {
+        if (!currentUser.role) currentUser.role = 'user';
+        currentUser.role = String(currentUser.role || 'user').trim().toLowerCase();
+        return currentUser;
+    }
+
+    const raw = sessionStorage.getItem('currentUser');
+    if (!raw || raw === 'undefined' || raw === 'null') return null;
+
+    try {
+        const parsed = JSON.parse(raw);
+        if (!parsed || typeof parsed !== 'object') return null;
+        parsed.role = String(parsed.role || 'user').trim().toLowerCase();
+        currentUser = parsed;
+        return currentUser;
+    } catch (err) {
+        console.error('Cannot restore current user:', err);
+        return null;
+    }
+}
+
+function updateNavbar() {
+    const activeUser = ensureCurrentUserReady_();
+    if (!activeUser) {
+        console.warn('updateNavbar skipped: currentUser is not ready');
         return;
     }
 
-    document.getElementById('noReportData').style.display = 'none';
-    document.getElementById('reportPreviewArea').style.display = 'block';
+    // 1. ล้างสถานะ active ของเมนูทั้งหมดก่อน
+    const navLinks = document.querySelectorAll('.nav-link');
+    navLinks.forEach(link => link.classList.remove('active'));
 
-    // 2. รวมข้อมูลยอดเงิน (Aggregation)
-    const studentMap = new Map();
-    filtered.forEach(item => {
-        const sid = String(item.studentId).trim();
-        const key = isWelfareMode ? `${sid}_${item.jobAgency}` : sid;
+    // 2. อัปเดตข้อมูลผู้ใช้ที่แถบด้านบน (Topbar)
+    if (currentUser) {
+        // --- ตรวจสอบสถานะการศึกษาเพื่อแสดงต่อท้ายชื่อ ---
+        let statusText = "";
+        const currentStatus = currentUser.studentStatus || currentUser.StudentStatus || "";
+        const statusDate = currentUser.statusDate || currentUser.StatusDate || "";
 
-        if(!studentMap.has(key)) {
-            studentMap.set(key, {
-                studentId: item.studentId,
-                fullName: item.studentName || '-', 
-                faculty: item.userFaculty || item.faculty || '-', 
-                promptPay: item.promptPay || '-', 
-                totalAmount: 0,
-                agency: item.jobAgency 
+        if (currentStatus === 'สำเร็จการศึกษา' || currentStatus === 'พ้นสภาพ') {
+            // ใช้ formatDate ที่มีอยู่แล้วแปลงวันที่ให้สวยงาม
+            const displayDate = statusDate ? formatDate(statusDate) : "-";
+            statusText = ` <span style="color: #d32f2f; font-size: 13px; font-weight: 500;">(${currentStatus} ${displayDate})</span>`;
+        }
+
+        const adminBackupStr = sessionStorage.getItem('admin_backup');
+        
+        // ประกอบชื่อ + นามสกุล + ป้ายสถานะสีแดง (ถ้ามี)
+        let displayNameTopbar = `${currentUser.prefix || ''}${currentUser.firstName} ${currentUser.lastName}`.trim() + statusText;
+        
+        // กรณีมีการสวมสิทธิ์ (Impersonation)
+        if (adminBackupStr) {
+            const admin = JSON.parse(adminBackupStr);
+            const adminFullName = `${admin.prefix || ''}${admin.firstName} ${admin.lastName}`.trim();
+            const targetName = sessionStorage.getItem('impersonate_target_name');
+            displayNameTopbar = `${adminFullName} <span style="color: #f97316; font-size: 12px;">(ดำเนินการแทน ${targetName})</span>`;
+        }
+        
+        // ใช้ innerHTML แทน textContent เพื่อให้ Tag <span> สีแดงทำงานได้
+        document.getElementById('displayUserName').innerHTML = displayNameTopbar;
+        document.getElementById('displayUserFaculty').textContent = currentUser.faculty || 'ส่วนกลาง';
+    }
+
+    // 3. จัดการการแสดงผลเมนูด้านซ้าย (Sidebar) ตามสิทธิ์ (Role)
+    const navItems = document.querySelectorAll('.nav-item');
+    navItems.forEach(item => item.classList.remove('show'));
+
+    // ซ่อนเมนูลงเวลาประจำไว้ก่อน จะแสดงก็ต่อเมื่อเช็คผ่าน checkRegularJobAccess()
+    const navRegular = document.getElementById('navRegularJob');
+    if (navRegular) {
+        navRegular.style.display = 'none';
+        navRegular.classList.remove('show');
+    }
+
+    // เปิดเมนูตาม Role
+    if (currentUser.role === 'admin') {
+        document.querySelectorAll('.admin-nav').forEach(item => item.classList.add('show'));
+    } 
+    else if (currentUser.role === 'staff') {
+        document.querySelectorAll('.staff-nav').forEach(item => item.classList.add('show'));
+    } 
+    else if (currentUser.role === 'executive') {
+        document.querySelectorAll('.exec-nav').forEach(item => item.classList.add('show'));
+    } 
+    else {
+        document.querySelectorAll('.user-nav').forEach(item => item.classList.add('show'));
+        checkRegularJobAccess(); // เช็คสิทธิ์ลงเวลาทำงานหน่วยงาน
+    }
+    
+    // ตรวจสอบการแสดงผลเมนู "แบบประเมิน" (เปิด/ปิด จากแอดมิน)
+    applyFeedbackMenuVisibility();
+}
+
+function setupNavClick(id, sectionId, callback) {
+        const el = document.getElementById(id);
+        if(el) {
+            el.addEventListener('click', (e) => {
+                e.preventDefault(); 
+                showSection(sectionId);
+                document.querySelectorAll('.nav-link').forEach(link => link.classList.remove('active'));
+                
+                el.classList.add('active');
+                const parentSubmenu = el.closest('.submenu-list');
+                if (parentSubmenu) {
+                    const parentToggle = parentSubmenu.previousElementSibling; // ตัวปุ่มเมนูหลัก
+                    if(parentToggle) {
+                        parentToggle.classList.add('active');
+                    }
+                }
+                if(window.innerWidth <= 768) sidebar.classList.remove('active');
+                
+                if(callback) callback();
             });
         }
-        const current = studentMap.get(key);
-        current.totalAmount += Number(item.amount || 0);
-    });
-
-// กำหนดลำดับคณะตามภาพที่คุณต้องการ
-    const facultyOrder = [
-        "วิทยาศาสตร์",
-        "เกษตรศาสตร์",
-        "วิศวกรรมศาสตร์",
-        "ศิลปศาสตร์",
-        "เภสัชศาสตร์",
-        "บริหารศาสตร์",
-        "พยาบาลศาสตร์",
-        "วิทยาลัยแพทยศาสตร์และการสาธารณสุข",
-        "ศิลปประยุกต์และสถาปัตยกรรมศาสตร์",
-        "นิติศาสตร์",
-        "รัฐศาสตร์",
-        "ศึกษาศาสตร์" // เผื่อไว้กรณีมีคณะอื่น
-    ];
-
-    const aggregatedData = Array.from(studentMap.values()).sort((a,b) => {
-        // 1. (สำหรับงานสวัสดิการ) ให้จัดกลุ่มตามหน่วยงานย่อยก่อน
-        if (isWelfareMode) {
-            const agencyCompare = String(a.agency).localeCompare(String(b.agency));
-            if (agencyCompare !== 0) return agencyCompare;
-        }
-
-        // 2. จัดกลุ่มตามคณะ (ตามลำดับใน facultyOrder)
-        let facA = String(a.faculty || '').replace(/^คณะ/, '').trim();
-        let facB = String(b.faculty || '').replace(/^คณะ/, '').trim();
-
-        let idxA = facultyOrder.indexOf(facA);
-        let idxB = facultyOrder.indexOf(facB);
-
-        // ถ้าหาชื่อคณะไม่เจอใน Array ให้เด้งไปอยู่ล่างสุด
-        if (idxA === -1) idxA = 999;
-        if (idxB === -1) idxB = 999;
-
-        if (idxA !== idxB) {
-            return idxA - idxB;
-        }
-
-        // 3. ภายในคณะเดียวกัน ให้เรียงตามรหัสนักศึกษา (จากน้อยไปมาก 65, 66, 67...)
-        return String(a.studentId).localeCompare(String(b.studentId));
-    });
-    
-    // 3. ตั้งค่าส่วนหัวรายงาน
-    document.getElementById('repUnitName').textContent = isWelfareMode ? "งานสวัสดิการนักศึกษา" : getOfficialAgencyName(selectedDept);
-    
-    const selectedMonthLabel = formatReportMonthLabel(selectedMonthKey);
-    document.getElementById('inputMonth').value = selectedMonthLabel;
-    if(document.getElementById('printMonthLabel')) document.getElementById('printMonthLabel').textContent = selectedMonthLabel;
-
-    const fmt = (num) => Number(num).toLocaleString('en-US', { maximumFractionDigits: 0 });
-
-    let colWidths = {};
-    
-    if (isWelfareMode) {
-        // งานสวัสดิการ: ให้พื้นที่ "หน่วยงาน" เยอะที่สุด
-        colWidths = {
-            no: "5%",       // ลำดับ
-            agency: "23%",  // หน่วยงาน (เพิ่มเป็น 25% เพื่อรองรับชื่อยาวๆ)
-            id: "13%",      // รหัสนักศึกษา (ปรับให้พอดีกับเลข 11 หลัก)
-            name: "22%",    // ชื่อ-สกุล
-            faculty: "13%", // คณะ (ลดลงนิดหน่อยเพื่อแบ่งให้หน่วยงาน)
-            pp: "12%",      // พร้อมเพย์
-            amt: "12%"      // เงิน
-        };
-    } else {
-        // งานปกติ (ไม่มีคอลัมน์หน่วยงาน)
-        colWidths = {
-            no: "5%",
-            id: "15%",
-            name: "30%",   
-            faculty: "20%",
-            pp: "15%",
-            amt: "15%"
-        };
     }
 
-    // 4. สร้าง Header ตาราง
-    const thead = document.querySelector('#printArea thead tr');
-    let headerHTML = `
-        <th style="width: ${colWidths.no}; text-align: center; white-space: nowrap;">ลำดับ</th>
-        ${isWelfareMode ? `<th style="width: ${colWidths.agency}; text-align: center;">หน่วยงาน</th>` : ''}
-        <th style="width: ${colWidths.id}; text-align: center; white-space: nowrap;">รหัสนักศึกษา</th>
-        <th style="width: ${colWidths.name}; text-align: center;">ชื่อผู้รับเงิน</th>
-        <th style="width: ${colWidths.faculty}; text-align: center;">คณะ</th>
-        <th style="width: ${colWidths.pp}; text-align: center;">เลขบัญชี (พร้อมเพย์)</th>
-        <th style="width: ${colWidths.amt}; text-align: center; white-space: nowrap;">จำนวนเงิน (บาท)</th>
-    `;
-    thead.innerHTML = headerHTML;
+    setupNavClick('navUserDashboard', 'userDashboardSection', () => { updateUserDashboard(); loadUserRegistrations(); });
+    setupNavClick('navJobSearch', 'jobSearchSection', () => { loadJobsForStudent(); });
+    setupNavClick('navDashboard', 'adminDashboardSection', () => loadDashboardOverview());
+    setupNavClick('navManageJobs', 'manageJobsSection', () => loadJobsForAdmin());
+    setupNavClick('navManageUsers', 'manageUsersSection', () => loadUsersForAdmin());
+    setupNavClick('navManageRegistrations', 'manageRegistrationsSection', () => loadRegistrationsForAdmin());
+    setupNavClick('navDownloadData', 'downloadDataSection', () => initDownloadMenu());
+    setupNavClick('navRecordTransfer', 'recordTransferSection', () => loadJobsForTransferRecord());
 
-    const tbody = document.getElementById('reportTableBody');
-    tbody.innerHTML = '';
-    let grandTotal = 0;
+function renderManualByRole() {
+    const cardStudent = document.getElementById('manualCardStudent');
+    const cardStaff = document.getElementById('manualCardStaff');
+    const cardAdmin = document.getElementById('manualCardAdmin');
 
-    aggregatedData.forEach((st, index) => {
-        const tr = document.createElement('tr');
-        grandTotal += st.totalAmount;
+    if(cardStudent) cardStudent.style.display = 'none';
+    if(cardStaff) cardStaff.style.display = 'none';
+    if(cardAdmin) cardAdmin.style.display = 'none';
 
-        const subUnitCell = isWelfareMode ? `<td style="text-align: left; vertical-align: top; padding-left:5px;">${st.agency}</td>` : '';
+    if (!currentUser) return;
 
-        // 🌟 --- ระบบจัดการย่อชื่อคณะ (กันตารางทะลุ/ตกบรรทัด) --- 🌟
-        let displayFaculty = st.faculty;
-        if (displayFaculty === 'วิทยาลัยแพทยศาสตร์และการสาธารณสุข') {
-            displayFaculty = 'วิทยาลัยแพทยศาสตร์ฯ';
-        }
-        // -----------------------------------------------------
-
-        tr.innerHTML = `
-            <td style="text-align: center; vertical-align: top;">${index + 1}</td>
-            ${subUnitCell}
-            <td style="text-align: center; vertical-align: top;">${st.studentId}</td>
-            <td style="text-align: left; vertical-align: top;">${st.fullName}</td>
-            <td style="text-align: left; vertical-align: top;">${displayFaculty}</td>
-            <td style="text-align: center; vertical-align: top;">${st.promptPay}</td>
-            <td style="text-align: right; vertical-align: top;">${fmt(st.totalAmount)}</td>
-        `;
-        tbody.appendChild(tr);
-    });
-
-    document.getElementById('repGrandTotal').textContent = fmt(grandTotal);
-    if (typeof BAHTTEXT === 'function') {
-        document.getElementById('printBahtText').innerText = BAHTTEXT(grandTotal);
-    }
-    
-    const footerLabelCell = document.querySelector('#printArea tfoot tr td:first-child');
-    if(footerLabelCell) {
-        footerLabelCell.colSpan = isWelfareMode ? 5 : 4; 
+    if (currentUser.role === 'admin' || currentUser.role === 'executive') {
+        if(cardStudent) cardStudent.style.display = 'flex';
+        if(cardStaff) cardStaff.style.display = 'flex';
+        if(cardAdmin) cardAdmin.style.display = 'flex';
+    } 
+    else if (currentUser.role === 'staff') {
+        if(cardStaff) cardStaff.style.display = 'flex';
+    } 
+    else {
+        if(cardStudent) cardStudent.style.display = 'flex';
     }
 
-    currentReportJobInfo = {
-        jobTitle: finalJobTitle,
-        data: aggregatedData,
-        isWelfareMode: isWelfareMode,
-        department: selectedDept,
-        monthKey: selectedMonthKey,
-        monthLabel: selectedMonthLabel
-    };
-
-    showLoading();
-    google.script.run.withSuccessHandler(res => {
-        hideLoading();
-        if (res.success) {
-            document.getElementById('inputRunNo').value = res.runNo;
-            document.getElementById('inputPrevBalance').value = res.prevBalance;
-            updatePrintPreview();
-        }
-    }).withFailureHandler(err => {
-        hideLoading();
-        updatePrintPreview();
-    }).getLatestBudgetStatus();
-}
-
-// --- ฟังก์ชันดาวน์โหลดรายงานเบิกจ่าย ฉบับ Excel (.xls) แก้หน้าขาว 100% ---
-function downloadFinancialReportCSV() {
-    try {
-        if(!currentReportJobInfo || !currentReportJobInfo.data || currentReportJobInfo.data.length === 0) {
-            Swal.fire('แจ้งเตือน', 'ไม่มีข้อมูลสำหรับดาวน์โหลด', 'warning');
-            return;
-        }
-
-        const isWelfare = currentReportJobInfo.isWelfareMode;
-        
-        // 1. ดึงข้อมูลหน่วยงาน เดือน/ปี และคำนวณยอดเงินรวมทั้งหมด
-        const agencyName = document.getElementById('repUnitName').textContent.trim() || 'รายงานการเบิกจ่าย';
-        const monthYear = document.getElementById('inputMonth').value.trim() || '-';
-        
-        let totalAmount = 0;
-        currentReportJobInfo.data.forEach(st => {
-            totalAmount += (Number(st.totalAmount) || 0);
-        });
-        
-        const colSpanCount = isWelfare ? 7 : 6;
-        
-        // 2. สร้างตาราง HTML แบบปลอดภัย (ไม่ใช้เครื่องหมายซับซ้อน)
-        let tableHTML = "<table border='1'>";
-        
-        // --- [จุดที่เพิ่มใหม่] หัวรายงานในไฟล์ Excel ---
-        tableHTML += `<tr><td colspan='${colSpanCount}' style='font-size: 18px; font-weight: bold; text-align: center;'>รายงานการเบิกจ่ายค่าตอบแทนนักศึกษา</td></tr>`;
-        tableHTML += `<tr><td colspan='${colSpanCount}' style='font-size: 16px; font-weight: bold; text-align: center;'>หน่วยงาน: ${agencyName}</td></tr>`;
-        tableHTML += `<tr><td colspan='${colSpanCount}' style='font-size: 16px; font-weight: bold; text-align: center;'>ประจำเดือน: ${monthYear}</td></tr>`;
-        tableHTML += `<tr><td colspan='${colSpanCount}' style='font-size: 16px; font-weight: bold; text-align: center; color: #1976D2;'>รวมยอดเงินเบิกจ่ายทั้งสิ้น: ${totalAmount.toLocaleString()} บาท</td></tr>`;
-        tableHTML += `<tr><td colspan='${colSpanCount}'></td></tr>`; // เว้น 1 บรรทัดก่อนเริ่มตาราง
-        
-        // หัวตาราง
-        tableHTML += "<tr style='background-color: #f2f2f2; font-weight: bold; text-align: center;'>";
-        tableHTML += "<td>ลำดับ</td>";
-        if(isWelfare) tableHTML += "<td>หน่วยงาน</td>";
-        tableHTML += "<td>รหัสนักศึกษา</td><td>ชื่อ-สกุล</td><td>คณะ</td><td>เลขบัญชี(พร้อมเพย์)</td><td>จำนวนเงิน</td>";
-        tableHTML += "</tr>";
-
-        // ข้อมูลนักศึกษา
-        currentReportJobInfo.data.forEach((st, index) => {
-            tableHTML += "<tr>";
-            tableHTML += "<td style='text-align: center;'>" + (index + 1) + "</td>";
-            if(isWelfare) tableHTML += "<td>" + (st.agency || "-") + "</td>";
-            
-            // ใช้ mso-number-format:"\@" บังคับให้ Excel ล็อกเลขเป็น 13 หลัก (ไม่เป็น E+12) 
-            tableHTML += "<td style='mso-number-format:\"\\@\"; text-align: center;'>" + (st.studentId || "-") + "</td>";
-            tableHTML += "<td>" + (st.fullName || "-") + "</td>";
-            tableHTML += "<td>" + (st.faculty || "-") + "</td>";
-            
-            // ล็อกเลขพร้อมเพย์ให้เป็น 13 หลักและจัดชิดขวา
-            tableHTML += "<td style='mso-number-format:\"\\@\"; text-align: right;'>" + (st.promptPay || "-") + "</td>";
-            tableHTML += "<td style='text-align: right;'>" + (st.totalAmount || 0) + "</td>";
-            tableHTML += "</tr>";
-        });
-        tableHTML += "</table>";
-
-        // 3. ห่อด้วย Tag HTML ของ Excel (ใส่ UTF-8 เพื่อกันภาษาไทยเพี้ยน)
-        let excelData = "<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:x='urn:schemas-microsoft-com:office:excel' xmlns='http://www.w3.org/TR/REC-html40'>";
-        excelData += "<head><meta charset='utf-8'></head><body>";
-        excelData += tableHTML;
-        excelData += "</body></html>";
-
-        // 4. สร้างและดาวน์โหลดไฟล์เป็น .xls (Excel)
-        const blob = new Blob([excelData], { type: 'application/vnd.ms-excel;charset=utf-8' });
-        const downloadLink = document.createElement("a");
-        
-        // --- [จุดที่ตั้งชื่อไฟล์ใหม่] รูปแบบ: ชื่อหน่วยงาน_จำนวนเงินบาท.xls ---
-        // (แทนที่ช่องว่างในชื่อหน่วยงานด้วย _ เพื่อป้องกันปัญหาเว้นวรรคตอนเซฟไฟล์)
-        const safeAgencyName = agencyName.replace(/\s+/g, '_');
-        downloadLink.download = `${safeAgencyName}_${totalAmount}บาท.xls`;
-        
-        downloadLink.href = window.URL.createObjectURL(blob);
-        downloadLink.style.display = "none";
-        document.body.appendChild(downloadLink);
-        downloadLink.click();
-        
-        setTimeout(() => {
-            document.body.removeChild(downloadLink);
-            window.URL.revokeObjectURL(downloadLink.href);
-        }, 100);
-
-    } catch (error) {
-        console.error("Export Error:", error);
-        Swal.fire('ข้อผิดพลาด', 'ไม่สามารถสร้างไฟล์ Excel ได้', 'error');
-    }
-}
-
-    setupNavClick('navRecordDisbursement', 'recordDisbursementSection', () => loadRecordDisbursementData());
-
-let recordDisbursementCache = { pending: [], closed: [] };
-let currentRecordTab = 'pending';
-
-// 1. โหลดข้อมูลจาก Server
-function loadRecordDisbursementData() {
-    showLoading();
-    google.script.run.withSuccessHandler(res => {
-        hideLoading();
-        if (res.success) {
-            recordDisbursementCache = res.data;
-            updateRecordBadges();
-            
-            // 1. สร้างตัวเลือกหน่วยงานก่อน
-            populateRecordDeptFilter();
-            
-            // 2. สั่งเปิดแท็บ Pending (ซึ่งจะไปเรียกฟังก์ชันกรองต่อ)
-            switchRecordTab('pending');
+    // --- ส่วนที่เพิ่มใหม่: เช็คสิทธิ์เพื่อซ่อน/แสดงปุ่มคู่มือแบบ Word ---
+    // ระบบจะค้นหาปุ่มที่มีลิงก์เป็นไฟล์ Google Docs (Word) ทุกปุ่มในหน้าคู่มือ
+    const wordBtns = document.querySelectorAll('#manualSection a[href*="docs.google.com/document"]');
+    wordBtns.forEach(btn => {
+        if (currentUser.role === 'admin') {
+            btn.style.display = 'inline-flex'; // แสดงปุ่มตามปกติ ถ้าเป็น Admin
         } else {
-            showAlert(res.message, 'error');
+            btn.style.display = 'none'; // ซ่อนปุ่ม ถ้าเป็นสิทธิ์อื่นๆ
         }
-    }).getJobsForClosing();
-}
-
-// 2. สร้างตัวเลือกใน Dropdown (ตั้งค่าเริ่มต้นเป็นค่าว่าง)
-function populateRecordDeptFilter() {
-    const data = recordDisbursementCache.pending || [];
-    const agencies = [...new Set(data.map(item => item.jobAgency))].sort();
-    
-    const select = document.getElementById('recordDeptFilter');
-    // ตั้งค่า value="" เพื่อให้เงื่อนไขตรวจสอบทำงาน
-    select.innerHTML = '<option value="">-- กรุณาเลือกหน่วยงาน --</option>';
-    
-    agencies.forEach(ag => {
-        const opt = document.createElement('option');
-        opt.value = ag;
-        opt.textContent = ag;
-        select.appendChild(opt);
     });
 }
 
-// 3. สลับแท็บ
-function switchRecordTab(tab) {
-    currentRecordTab = tab;
-    
-    // เปลี่ยนสีปุ่มแท็บ
-    const btns = document.querySelectorAll('#recordDisbursementSection .reg-tab-btn');
-    btns.forEach(b => b.classList.remove('active'));
-    if(tab === 'pending') btns[0].classList.add('active');
-    else btns[1].classList.add('active');
+    setupNavClick('navManual', 'manualSection', () => {
+        renderManualByRole();
+    });
 
-    // ซ่อน/แสดง แถบตัวกรอง (เฉพาะแท็บ Pending ถึงจะโชว์)
-    const actionArea = document.getElementById('recordActionArea');
-    if (actionArea) {
-        actionArea.style.display = (tab === 'pending') ? 'flex' : 'none';
+setupNavClick('navManageBudget', 'manageBudgetSection', () => {
+    loadBudgetInfoForAdmin(); 
+});
+    setupNavClick('navPayroll', 'payrollSection', () => loadPayrollPage());
+    document.getElementById('showSignup').addEventListener('click', (e) => { 
+    e.preventDefault(); 
+    document.getElementById('checkEligibleId').value = ''; // ล้างค่าเก่า
+    showSection('checkEligibilitySection'); 
+});
+    document.getElementById('showLogin').addEventListener('click', (e) => { e.preventDefault(); showSection('loginSection'); });
+    document.getElementById('navLogout').addEventListener('click', confirmLogout);
+    
+(function initCoreWhenAllProtectedModulesReady() {
+  let hasRun = false;
+
+  const run = () => {
+    if (hasRun) return;
+    hasRun = true;
+
+    if (typeof populateDepartments === 'function') {
+        populateDepartments('jobAgency');
+        populateDepartments('modalUserDepartment');
+        populateDepartments('allocDepartment');
     }
-    
-    // *** จุดสำคัญ: เรียกฟังก์ชันกรอง เพื่อเช็คว่าเลือกหน่วยงานหรือยัง ***
-    filterRecordTable();
-}
 
-// 4. ฟังก์ชันกรองและแสดงตาราง (หัวใจหลัก: ซ่อนข้อมูลถ้าไม่เลือกหน่วยงาน)
-function filterRecordTable() {
-    const tbody = document.querySelector('#recordDisbursementTable tbody');
-    tbody.innerHTML = ''; // ล้างข้อมูลเก่าทิ้งทันที
-    
-    // ถ้าไม่ใช่แท็บ Pending (เช่นแท็บ "ปิดบัญชีแล้ว") ให้แสดงข้อมูลเลย ไม่ต้องรอเลือก
-    if (currentRecordTab !== 'pending') {
-        renderTableRows(recordDisbursementCache[currentRecordTab] || []);
+    const storedUser = sessionStorage.getItem('currentUser');
+    if (storedUser && storedUser !== "undefined" && storedUser !== "null") {
+        try {
+            currentUser = JSON.parse(storedUser);
+            if (!currentUser || typeof currentUser !== 'object') {
+                throw new Error('ข้อมูลบัญชีผู้ใช้ไม่สมบูรณ์');
+            }
+            currentUser.role = String(currentUser.role || 'user').trim().toLowerCase();
+            const isImp = sessionStorage.getItem('impersonate_mode');
+            const impUserStr = sessionStorage.getItem('impersonated_user');
+
+            if (isImp === 'true' && impUserStr) {
+                console.log("System Status: Impersonation Mode Active");
+                currentUser = JSON.parse(impUserStr);
+                if (!currentUser || typeof currentUser !== 'object') {
+                    throw new Error('ข้อมูลบัญชีที่ทำรายการแทนไม่สมบูรณ์');
+                }
+                currentUser.role = String(currentUser.role || 'user').trim().toLowerCase();
+            } else {
+                console.log("System Status: Normal Mode");
+            }
+
+            startSessionTimer();
+
+            // forceRefreshSystem() is defined in analytics-docs.js, which is
+            // loaded after core.js in the protected-shell architecture.
+            if (typeof forceRefreshSystem !== 'function') {
+                hasRun = false;
+                throw new Error('Protected application modules are not ready');
+            }
+            forceRefreshSystem();
+
+        } catch (e) {
+            console.error("Protected app initialization error:", e);
+            // Do not destroy a valid login session just because a frontend
+            // module has not finished loading. login.js will surface the error.
+            hideLoading();
+            throw e;
+        }
+    } else {
+        hideLoading();
+        if (typeof showSection === 'function') showSection('loginSection');
+        if (typeof showMaintenanceWarning === 'function') showMaintenanceWarning();
+    }
+  };
+
+  // login.js calls this only after ALL protected JS modules have loaded.
+  window.__UBU_RUN_CORE_INIT__ = run;
+
+  // Backward-compatible behavior when core.js is used in the old all-in-one page.
+  if (window.__UBU_APP_MODULES_READY__ === true) {
+    run();
+  }
+})();
+
+// Login/OTP is owned exclusively by assets/js/login.js in the protected-shell architecture.
+// The legacy loginForm submit handler was removed to prevent duplicate login flows after AppShell loads.
+
+function proceedToSystem() {
+    if (!ensureCurrentUserReady_()) {
+        hideLoading();
+        showAlert('ไม่สามารถโหลดข้อมูลบัญชีผู้ใช้งานได้ กรุณาเข้าสู่ระบบใหม่', 'error');
         return;
     }
-
-    // --- ส่วนเช็คการเลือกหน่วยงาน (เฉพาะแท็บ Pending) ---
-    const filterDept = document.getElementById('recordDeptFilter').value;
+    updateAdminButtonVisibility();
+    updateNavbar();
     
-    if (filterDept === "") {
-        // ถ้ายังไม่เลือก -> แสดงข้อความแจ้งเตือน และซ่อนปุ่มปิดบัญชี
-        const colCount = document.querySelectorAll('#recordDisbursementTable th').length;
-        tbody.innerHTML = `
-            <tr>
-                <td colspan="${colCount}" style="text-align:center; padding: 40px; color: #999; background-color: #f9f9f9;">
-                    <div style="font-size: 40px; margin-bottom: 10px;">👆</div>
-                    <div style="font-size: 16px;">กรุณาเลือก <b>"หน่วยงาน"</b> ด้านบนก่อน</div>
-                    <div style="font-size: 14px; color: #ccc;">ข้อมูลจะแสดงหลังจากท่านเลือกหน่วยงานแล้ว</div>
-                </td>
-            </tr>`;
-        
-        updateBulkButtonState(); // ปิดปุ่ม "ปิดบัญชี"
-        document.getElementById('noRecordData').style.display = 'none';
-        return; // จบการทำงาน ไม่วาดตารางข้อมูล
-    }
-
-    // ถ้าเลือกแล้ว -> กรองข้อมูลตามหน่วยงาน
-    const rawData = recordDisbursementCache[currentRecordTab] || [];
-    const filteredData = rawData.filter(item => item.jobAgency === filterDept);
-
-    if (filteredData.length === 0) {
-        document.getElementById('noRecordData').style.display = 'block';
+    if (currentUser.role === 'admin' || currentUser.role === 'staff' || currentUser.role === 'executive') {
+        document.getElementById('navDashboard').click();
     } else {
-        document.getElementById('noRecordData').style.display = 'none';
-        renderTableRows(filteredData);
+        document.getElementById('navUserDashboard').click();
     }
 }
-
-// 5. ฟังก์ชันย่อยสำหรับวาดแถว (แก้ไขหน่วยนับเป็น "รายการ")
-function renderTableRows(data) {
-    const tbody = document.querySelector('#recordDisbursementTable tbody');
-    
-    // Reset Checkbox หัวตาราง
-    const selectAll = document.getElementById('selectAllRecord');
-    if(selectAll) selectAll.checked = false;
-
-    data.forEach(job => {
-        const row = tbody.insertRow();
-        
-        // Col 1: Checkbox
-        const checkCell = row.insertCell();
-        checkCell.style.textAlign = 'center';
-        
-        if (currentRecordTab === 'pending') {
-            checkCell.innerHTML = `<input type="checkbox" class="record-checkbox" data-title="${job.jobTitle}" data-agency="${job.jobAgency}" onchange="updateBulkButtonState()">`;
-        } else {
-            checkCell.innerHTML = `<i class="material-icons" style="color:#ccc; font-size:16px;">lock</i>`;
-        }
-
-        // Col 2-6: ข้อมูล
-        row.insertCell().innerHTML = `<strong>${job.jobTitle}</strong>`;
-        row.insertCell().textContent = job.jobAgency;
-        
-        // --- [จุดที่แก้ไข] เปลี่ยนจาก "คน" เป็น "รายการ" ---
-        row.insertCell().innerHTML = `<div style="text-align:center;"><span class="badge-count">${job.count} รายการ</span></div>`;
-        // ------------------------------------------------
-        
-        row.insertCell().innerHTML = `<div style="text-align:right; font-weight:bold; color:var(--secondary-color);">฿${job.totalAmount.toLocaleString()}</div>`;
-        
-        const statusCell = row.insertCell();
-        statusCell.style.textAlign = 'center';
-        
-        if (currentRecordTab === 'pending') {
-            statusCell.innerHTML = `<span class="badge-status-paid" style="background:#fff3cd; color:#856404;">รอปิดบัญชี</span>`;
-        } else {
-            statusCell.innerHTML = `<button class="btn btn-info" onclick="downloadClosedJobCSV('${job.jobTitle}')" style="padding:4px 8px; font-size:12px;"><i class="material-icons" style="vertical-align:middle; font-size:14px;">download</i> ส่งคลัง</button>`;
-        }
-    });
-
-    // อัปเดตสถานะปุ่มหลังจากวาดเสร็จ
-    updateBulkButtonState();
-}
-
-// 6. จัดการ Checkbox "เลือกทั้งหมด"
-function toggleSelectAllRecord() {
-    const isChecked = document.getElementById('selectAllRecord').checked;
-    const checkboxes = document.querySelectorAll('.record-checkbox');
-    checkboxes.forEach(cb => cb.checked = isChecked);
-    updateBulkButtonState();
-}
-
-// 7. อัปเดตสถานะปุ่ม "ปิดบัญชีที่เลือก"
-function updateBulkButtonState() {
-    const checkedCount = document.querySelectorAll('.record-checkbox:checked').length;
-    const btn = document.getElementById('btnBulkClose');
-    
-    if (checkedCount > 0) {
-        btn.disabled = false;
-        btn.style.opacity = '1';
-        btn.style.cursor = 'pointer';
-        btn.innerHTML = `<i class="material-icons" style="vertical-align: middle;">done_all</i> ปิดบัญชี (${checkedCount})`;
-    } else {
-        btn.disabled = true;
-        btn.style.opacity = '0.6';
-        btn.style.cursor = 'not-allowed';
-        btn.innerHTML = `<i class="material-icons" style="vertical-align: middle;">done_all</i> ปิดบัญชีที่เลือก`;
-    }
-}
-
-// 8. ฟังก์ชันยืนยันการปิดบัญชีหมู่
-function confirmBulkClose() {
-    const checkboxes = document.querySelectorAll('.record-checkbox:checked');
-    if (checkboxes.length === 0) return;
-
-    const selectedJobs = Array.from(checkboxes).map(cb => ({
-        title: cb.getAttribute('data-title'),
-        agency: cb.getAttribute('data-agency')
-    }));
-
-    Swal.fire({
-        title: 'ยืนยันการปิดบัญชี',
-        html: `คุณต้องการปิดบัญชีจำนวน <b>${selectedJobs.length} รายการ</b> ใช่หรือไม่?<br><small style="color:red;">*เมื่อปิดแล้ว รายการจะถูกย้ายไปยังสถานะ "โอนเงินสำเร็จ"</small>`,
-        icon: 'warning',
-        showCancelButton: true,
-        confirmButtonColor: '#28a745',
-        confirmButtonText: 'ยืนยันปิดบัญชี',
-        cancelButtonText: 'ยกเลิก'
-    }).then((result) => {
-        if (result.isConfirmed) {
-            showLoading();
-            google.script.run.withSuccessHandler(res => {
-                hideLoading();
-                if (res.success) {
-                    Swal.fire('สำเร็จ', res.message, 'success');
-                    loadRecordDisbursementData();
-                } else {
-                    Swal.fire('เกิดข้อผิดพลาด', res.message, 'error');
-                }
-            }).closeBatchJobs(selectedJobs);
-        }
-    });
-}
-
-    // --- เพิ่มฟังก์ชันใหม่ ต่อท้าย switchRecordTab ---
-
-    function downloadClosedJobCSV(jobTitle) {
-        showLoading();
+    document.getElementById('signupForm').addEventListener('submit', async (e) => {
+        e.preventDefault(); showLoading();
+        const data = {
+            gmail: document.getElementById('signupGmail').value, prefix: document.getElementById('signupPrefix').value,
+            firstName: document.getElementById('signupFirstName').value, lastName: document.getElementById('signupLastName').value,
+            studentId: document.getElementById('signupStudentId').value, faculty: document.getElementById('signupFaculty').value,
+            phone: document.getElementById('signupPhone').value, password: document.getElementById('signupPassword').value,
+            role: 'user'
+        };
         google.script.run.withSuccessHandler(res => {
             hideLoading();
-            if(!res.success) {
-                showAlert(res.message || 'ไม่พบข้อมูล', 'error');
-                return;
-            }
+            if(res.success) { showAlert(res.message); showSection('loginSection'); document.getElementById('signupForm').reset(); }
+            else showAlert(res.message, 'error');
+        }).signUp(data);
+    });
 
-            // สร้าง CSV
-            const list = res.data;
-            if(list.length === 0) { showAlert('ไม่มีรายชื่อในงานนี้', 'warning'); return; }
+function confirmLogout() {
+    const isImpersonating = sessionStorage.getItem('impersonate_mode') === 'true';
 
-            let csv = [];
-            // Header
-            csv.push(`"รายงานการเบิกจ่าย (ปิดบัญชี)","${jobTitle}"`);
-            csv.push(`"ลำดับ","รหัสนักศึกษา","ชื่อ-สกุล","คณะ","เลขบัญชี(พร้อมเพย์)","จำนวนเงิน"`);
-
-            // Rows (Aggregation รวมยอดเงินคนเดิมให้อัตโนมัติจาก Backend)
-            list.forEach((st, index) => {
-                csv.push(`"${index + 1}","'${st.studentId}","${st.studentName}","${st.userFaculty}","'${st.promptPay}","${st.amount}"`);
-            });
-
-            // Download Logic
-            const csvFile = new Blob(["\uFEFF" + csv.join("\n")], { type: "text/csv;charset=utf-8;" });
-            const downloadLink = document.createElement("a");
-            downloadLink.download = `closed_report_${jobTitle}.csv`;
-            downloadLink.href = window.URL.createObjectURL(csvFile);
-            downloadLink.style.display = "none";
-            document.body.appendChild(downloadLink);
-            downloadLink.click();
-            document.body.removeChild(downloadLink);
-
-        }).getReportForClosedJob(jobTitle); // เรียก Backend ตัวใหม่
-    }
-
-    function updateRecordBadges() {
-        document.getElementById('countRecordPending').textContent = recordDisbursementCache.pending.length;
-        document.getElementById('countRecordClosed').textContent = recordDisbursementCache.closed.length;
-    }
-
-    // --- 4. Confirm Close Job ---
-    function confirmCloseJob(jobTitle) {
+    if (isImpersonating) {
         Swal.fire({
-            title: 'ยืนยันการปิดบัญชี',
-            html: `คุณต้องการบันทึกการเบิกจ่ายงาน <b>"${jobTitle}"</b> ใช่หรือไม่<br><small style="color:red;">*เมื่อบันทึกแล้ว งานนี้จะไม่แสดงในหน้ารายงานอีก</small>`,
-            icon: 'warning',
+            title: 'ออกจากการทำรายการเเทน',
+            text: "คุณต้องการกลับสู่บัญชีผู้ดูแลระบบใช่หรือไม่",
+            icon: 'info',
             showCancelButton: true,
-            confirmButtonColor: '#28a745',
-            confirmButtonText: 'ยืนยันปิดบัญชี',
+            confirmButtonColor: '#f97316', 
+            cancelButtonColor: '#6c757d',
+            confirmButtonText: 'กลับสู่เมนูระบบ',
             cancelButtonText: 'ยกเลิก'
         }).then((result) => {
             if (result.isConfirmed) {
+                exitImpersonation(); 
+            }
+        });
+
+    } else {
+        Swal.fire({
+            title: 'ยืนยันการออกจากระบบ',
+            text: "คุณต้องการออกจากระบบนี้ใช่หรือไม่",
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonColor: '#dc3545', 
+            cancelButtonColor: '#6c757d',
+            confirmButtonText: 'ใช่ ออกจากระบบ',
+            cancelButtonText: 'ยกเลิก'
+        }).then((result) => {
+            if (result.isConfirmed) {
+                logout(); 
+            }
+        });
+    }
+}
+
+function logout() {
+    // เก็บ Token ไว้ชั่วคราวเพื่อยกเลิก Session ฝั่ง Server ก่อนล้าง Browser
+    const tokenToRevoke = sessionStorage.getItem('sessionToken') || localStorage.getItem('sessionToken') || '';
+
+    // Fire-and-forget: UX ไม่ต้องรอ Server แต่ Token จะถูกลบจาก CacheService ฝั่ง Apps Script
+    if (tokenToRevoke && window.GAS_API && typeof window.GAS_API.call === 'function') {
+        window.GAS_API.call('logoutSession', [])
+          .catch(err => console.warn('Server logout failed:', err));
+    }
+
+    // 1. ล้างข้อมูลในตัวแปร (Memory) เพื่อความปลอดภัย
+    currentUser = null;
+    allUsersCache = [];
+    allRegistrationsCache = [];
+    allDocumentsCache = [];
+    budgetDataCache = [];
+    submittedLogsCache = [];
+
+    // 2. หยุดตัวจับเวลา Session
+    if (typeof sessionTimer !== 'undefined') {
+        clearTimeout(sessionTimer);
+    }
+
+    // 3. ล้าง Storage ใน Browser
+    localStorage.removeItem('sessionToken');
+    localStorage.removeItem('currentUser');
+    sessionStorage.clear();
+
+    // 4. รีเซ็ตฟอร์ม Login
+    const loginForm = document.getElementById('loginForm');
+    if (loginForm) loginForm.reset();
+
+    // 5. ออกจาก Protected UI จริง: Reload กลับหน้า Login-only
+    // ทำให้ AppShell และ application scripts ถูกนำออกจาก DOM/หน่วยความจำของหน้าเดิม
+    try {
+        history.replaceState(null, '', window.location.pathname.replace(/[^/]*$/, '') || './');
+    } catch (_) {}
+    window.location.replace('./');
+}
+
+function updateUserDashboard() {
+  renderFiscalRenewalButton_();
+    if (currentUser) {
+        let statusSuffix = "";
+        const currentStatus = currentUser.studentStatus || currentUser.StudentStatus || "";
+        const statusDate = currentUser.statusDate || currentUser.StatusDate || "";
+
+        if (currentStatus === 'สำเร็จการศึกษา' || currentStatus === 'พ้นสภาพ') {
+            const displayDate = statusDate ? formatDate(statusDate) : "-";
+            statusSuffix = ` <span style="color: #d32f2f; font-weight: 500;">(${currentStatus} ${displayDate})</span>`;
+        }
+
+        const fullName = `${currentUser.prefix || ''}${currentUser.firstName} ${currentUser.lastName}`;
+        document.getElementById('currentUserName').innerHTML = fullName + statusSuffix;
+        document.getElementById('currentUserStudentId').textContent = currentUser.studentId;
+        document.getElementById('currentUserFaculty').textContent = currentUser.faculty;
+    }
+}
+
+function loadUserRegistrations() {
+    showLoading();
+    google.script.run.withSuccessHandler(regs => {
+        hideLoading();
+        const tbody = document.querySelector('#userRegistrationsTable tbody');
+        const mobileContainer = document.getElementById('mobileRegListContainer');
+        
+        tbody.innerHTML = '';
+        mobileContainer.innerHTML = '';
+        loadStudentMonthlyJobs();
+        
+        if(regs && regs.length > 0) {
+            document.getElementById('noUserRegistrations').style.display = 'none';
+            regs.forEach(r => {
+                let status = String(r.status).toLowerCase().trim();
+                let statusText = 'รอพิจารณา'; 
+                let color = 'var(--warning-color)';
+                let statusClass = 'status-pending';
+                let manageButtonHtml = '';
+                if(status === 'confirmed' || status === 'approved' || status === 'รับเข้าทำงาน') { 
+                    statusText = 'รับเข้าทำงาน'; 
+                    color = 'var(--success-color)'; 
+                    statusClass = 'status-confirmed';
+                    manageButtonHtml = `<button class="btn btn-danger-outline btn-cancel-reg" data-id="${monthlySafe(r.id)}" style="padding:5px 10px;font-size:12px;border:1px solid #b91c1c;color:#b91c1c;background:#fff">ยกเลิกสมัคร</button>`;
+                } 
+                else if(status === 'cancelled' || status === 'rejected' || status === 'ไม่ผ่าน') { 
+                    statusText = 'ไม่ผ่าน/ยกเลิก'; 
+                    color = 'var(--danger-color)'; 
+                    statusClass = 'status-cancelled';
+                    manageButtonHtml = '<span style="color:#999;">-</span>';
+                } 
+                else {
+                     statusText = 'รอพิจารณา';
+                     manageButtonHtml = `
+                        <button class="btn btn-danger-outline btn-cancel-reg" data-id="${r.id}" style="padding: 5px 10px; font-size: 12px; border: 1px solid var(--danger-color); color: var(--danger-color); background: #fff;">
+                           ยกเลิกสมัคร
+                        </button>`;
+                }
+                
+                const row = tbody.insertRow();
+                row.insertCell().innerHTML = `<b>${r.jobTitle || 'งานทั่วไป'}</b>`;
+                row.insertCell().textContent = r.jobAgency || '-';
+
+                let slotTh = studentJobSlotDisplay(r.timeSlot);
+                row.insertCell().textContent = `${formatDate(r.activityDate)} (${slotTh})`;
+                
+                const statusCell = row.insertCell();
+                statusCell.innerHTML = `<span style="font-weight:bold; color:${color}">${statusText}</span>`;
+                
+                const actionCell = row.insertCell();
+                actionCell.style.textAlign = 'center';
+                actionCell.innerHTML = manageButtonHtml;
+                
+                const mobileCard = document.createElement('div');
+                mobileCard.className = 'reg-list-item';
+                mobileCard.innerHTML = `
+                    <div class="reg-job-title">${r.jobTitle || 'งานทั่วไป'}</div>
+                    <div class="reg-job-detail">
+                        <div><i class="material-icons" style="font-size:16px; vertical-align:sub; color:#999;">business</i> ${r.jobAgency || '-'}</div>
+                        <div style="text-align: right;"><span class="reg-status-badge ${statusClass}">${statusText}</span></div>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; align-items: center; border-top: 1px solid #f0f0f0; padding-top: 10px; margin-top: 10px;">
+                        <div style="font-size: 14px; color: #555; font-weight: 500;">
+                            <i class="material-icons" style="font-size:16px; vertical-align:sub; color:#999;">event</i> ${formatDate(r.activityDate)} (${slotTh})
+                        </div>
+                        <div>${manageButtonHtml}</div>
+                    </div>
+                `;
+                mobileContainer.appendChild(mobileCard);
+            });
+            
+            document.querySelectorAll('.btn-cancel-reg').forEach(btn => {
+                btn.onclick = () => confirmCancelReg(btn.dataset.id);
+            });
+
+        } else {
+            document.getElementById('noUserRegistrations').style.display = 'block';
+        }
+    }).getUserRegistrations(sessionStorage.getItem('sessionToken'), currentUser.id); // 🛡️ แนบ Token
+}
+
+
+    function confirmCancelReg(id) {
+    Swal.fire({
+        title: 'ยืนยันการยกเลิก', text: "คุณต้องการยกเลิกการสมัครงานนี้ใช่หรือไม่", icon: 'warning',
+        showCancelButton: true, confirmButtonColor: '#d33', confirmButtonText: 'ยืนยัน', cancelButtonText: 'ปิด'
+    }).then((result) => {
+        if (result.isConfirmed) {
+            showLoading();
+            // 🛡️ ดึง Token ก่อนส่งไปหลังบ้าน
+            const token = sessionStorage.getItem('sessionToken');
+            
+            google.script.run.withSuccessHandler(result => { 
+                hideLoading();
+                if (!result || !result.success) return showAlert((result && result.message) || 'ยกเลิกไม่สำเร็จ', 'error');
+                showAlert('ยกเลิกเรียบร้อย', 'success'); 
+                loadUserRegistrations(); 
+            }).withFailureHandler(err => { hideLoading(); showAlert(err.message || String(err), 'error'); }).cancelMyJobApplication(token, id); // 🛡️ ส่ง token เข้าไปด้วย
+        }
+    });
+}
+
+    function loadJobsForStudent() {
+        showLoading();
+        google.script.run.withSuccessHandler(data => {
+            hideLoading();
+            jobs = data;
+            renderJobs(jobs);
+        }).getVisibleActivities(sessionStorage.getItem('sessionToken'));
+    }
+
+function renderJobs(jobData) {
+    const container = document.getElementById('jobListContainer');
+    container.innerHTML = '';
+    
+    const now = new Date();
+    const today = now.toISOString().split('T')[0];
+    const formatPostTime = (dateStr) => {
+        if (!dateStr) return '';
+        const d = new Date(dateStr.replace(' ', 'T')); 
+        if (isNaN(d.getTime())) return dateStr;
+        const datePart = d.toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' });
+        const timePart = d.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' });
+        return `${datePart} เวลา ${timePart} น.`;
+    };
+
+    // --- แก้ไขการกรองวันที่ (รองรับ | สำหรับแบบเหมา) ---
+    const activeJobs = jobData.filter(j => {
+        let jobDateStr = j.date;
+        if(!jobDateStr || j.isLocked === 'TRUE') return false;
+        
+        // ถ้าเป็นแบบเหมา ให้เอาวันที่สิ้นสุดมาตรวจสอบว่าหมดอายุหรือยัง
+        let expireDate = jobDateStr.includes('|') ? jobDateStr.split('|')[1] : jobDateStr;
+        return expireDate >= today; 
+    });
+
+    if(activeJobs.length === 0) {
+        document.getElementById('noJobsAvailable').style.display = 'block';
+        return;
+    }
+    document.getElementById('noJobsAvailable').style.display = 'none';
+
+    activeJobs.forEach(job => {
+        const card = document.createElement('div');
+        card.className = 'modern-job-card';
+        
+        const isMulti = job.date && job.date.includes('|');
+        const totalQuota = parseInt(job.totalQuota) || 0;
+        
+        // ถ้ารูปแบบเหมา ให้ใช้ multiRegistered (ที่ส่งมาจาก Backend)
+        const filled = isMulti ? parseInt(job.multiRegistered || 0) : (parseInt(job.morningRegistered || 0) + parseInt(job.afternoonRegistered || 0) + parseInt(job.eveningRegistered || 0));
+        
+        const isFull = filled >= totalQuota;
+        const statusPillClass = isFull ? 'pill-full' : 'pill-open';
+        const statusText = isFull ? 'เต็มแล้ว' : 'เปิดรับสมัคร';
+        const btnClass = isFull ? 'disabled' : 'active';
+        const btnText = isFull ? 'ปิดรับ' : 'สมัครทันที';
+        const btnIcon = isFull ? 'block' : 'arrow_forward';
+        const postTimestamp = formatPostTime(job.createdAt);
+
+        // สร้าง String วันที่เพื่อแสดงผล
+        let displayDateText = '';
+        if (isMulti) {
+            const [dStart, dEnd] = job.date.split('|');
+            displayDateText = `${formatDate(dStart)} - ${formatDate(dEnd)}`;
+        } else {
+            displayDateText = formatDate(job.date);
+        }
+
+        card.innerHTML = `
+            <div class="card-top-accent"></div>
+            <div class="status-pill ${statusPillClass}">${statusText}</div>
+            <div class="card-content" style="padding-bottom: 15px;">
+                <div style="display: flex; align-items: flex-start; margin-bottom: 15px; border-bottom: 1px dashed #eee; padding-bottom: 10px;">
+                    <div style="width: 40px; height: 40px; background: #e3f2fd; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin-right: 12px; flex-shrink: 0;">
+                        <i class="material-icons" style="color: var(--secondary-color); font-size: 22px;">campaign</i>
+                    </div>
+                    <div>
+                        <div style="font-size: 14px; font-weight: 700; color: #333;">${job.jobAgency || 'ส่วนกลาง'}</div>
+                        <div style="font-size: 11px; color: #888; margin-top: 2px;">
+                            <i class="material-icons" style="font-size: 10px; vertical-align: middle;">schedule</i> 
+                            ประกาศเมื่อ: ${postTimestamp}
+                        </div>
+                    </div>
+                </div>
+                
+                <h3 class="modern-title" style="margin-bottom: 8px;">${job.jobTitle || 'ประกาศรับสมัครงาน'}</h3>
+                
+                <div class="modern-desc">
+                    ${job.jobDescription || 'ไม่มีรายละเอียดเพิ่มเติม'}
+                </div>
+            </div>
+
+            <div class="card-footer">
+                <div class="meta-info">
+                    <div class="date-text" style="display: flex; align-items: center; gap: 5px;">
+                        <i class="material-icons" style="font-size:16px; color:var(--secondary-color);">calendar_today</i> 
+                        ${isMulti ? `<span class="vf-badge vf-badge-blue" style="font-size:11px; margin-right:5px;">เหมา</span>` : ''} 
+                        ปฏิบัติงาน: ${displayDateText}
+                    </div>
+                    <div class="quota-text" style="margin-left: 24px; color: #555;">
+                        รับ ${totalQuota} (ว่าง <span style="color:${isFull ? 'red' : 'green'}; font-weight:bold;">${Math.max(0, totalQuota - filled)}</span>)
+                    </div>
+                </div>
+                
+                <button class="btn-apply-modern ${btnClass}" ${isFull ? 'disabled' : ''}>
+                    ${btnText} <i class="material-icons" style="font-size:16px;">${btnIcon}</i>
+                </button>
+            </div>
+        `;
+        
+        if(!isFull) {
+            const btn = card.querySelector('button');
+            btn.onclick = () => openApplyPage(job);
+        }
+        
+        container.appendChild(card);
+    });
+}
+
+function openApplyPage(job) {
+    selectedJobForApply = job;
+    selectedTimeSlot = null;
+
+    const isMulti = job.date && job.date.includes('|');
+    let displayDateText = '';
+    
+    if (isMulti) {
+        const [dStart, dEnd] = job.date.split('|');
+        displayDateText = `${formatDate(dStart)} - ${formatDate(dEnd)}`;
+    } else {
+        displayDateText = formatDate(job.date);
+    }
+
+    document.getElementById('appFormJobTitle').textContent = job.jobTitle;
+    document.getElementById('appFormJobAgency').textContent = job.jobAgency;
+    document.getElementById('appFormJobDate').textContent = displayDateText;
+    document.getElementById('appFormStudentName').textContent = `${currentUser.prefix}${currentUser.firstName} ${currentUser.lastName}`;
+    document.getElementById('appFormStudentId').textContent = `รหัส: ${currentUser.studentId}`;
+    document.getElementById('appFormFaculty').textContent = currentUser.faculty;
+
+    const container = document.getElementById('appFormSlotContainer');
+    container.innerHTML = '';
+    
+    const createSlotBtn = (key, label, quota, reg) => {
+        const btn = document.createElement('button');
+        btn.className = 'slot-btn';
+        const left = quota - reg;
+        
+        let statusHtml = left > 0 
+            ? `<div class="slot-quota" style="color:green;">ว่าง ${left} ที่</div>` 
+            : `<div class="slot-quota" style="color:red;">เต็ม</div>`;
+
+        btn.innerHTML = `<div class="slot-time">${label}</div>${statusHtml}`;
+        
+        if(left <= 0) {
+            btn.disabled = true;
+        } else {
+            btn.onclick = () => {
+                document.querySelectorAll('.slot-btn').forEach(b => b.classList.remove('selected'));
+                btn.classList.add('selected');
+                selectedTimeSlot = key;
+                document.getElementById('confirmApplyBtn').disabled = false;
+            };
+        }
+        container.appendChild(btn);
+    };
+
+    // --- ตรวจสอบว่าเป็นแบบเหมาหรือปกติ ---
+    if (isMulti) {
+        // ถ้ารูปแบบเหมา ให้มีปุ่มเดียว และใช้โควตารวม (totalQuota) ลบกับยอดคนสมัครแบบเหมา (multiRegistered)
+        createSlotBtn('multi', 'ปฏิบัติงาน (ตลอดช่วงเวลาที่กำหนด)', job.totalQuota, job.multiRegistered);
+    } else {
+        // แบบปกติ
+        createSlotBtn('morning', 'ช่วงเช้า (08:30-12:00)', job.morningQuota, job.morningRegistered);
+        createSlotBtn('afternoon', 'ช่วงบ่าย (13:00-16:30)', job.afternoonQuota, job.afternoonRegistered);
+        createSlotBtn('evening', 'ช่วงเย็น (16:30-20:00)', job.eveningQuota, job.eveningRegistered);
+    }
+
+    showSection('applyJobSection');
+}
+
+    function closeApplyPage() {
+        showSection('jobSearchSection');
+    }
+
+document.getElementById('confirmApplyBtn').onclick = () => {
+        if(!selectedTimeSlot) return;
+        
+        Swal.fire({
+            title: 'ยืนยันการสมัคร', text: "กรุณาตรวจสอบข้อมูลก่อนยืนยัน", icon: 'question',
+            showCancelButton: true, confirmButtonText: 'ยืนยัน', cancelButtonText: 'ยกเลิก'
+        }).then((result) => {
+            if (result.isConfirmed) {
                 showLoading();
+                
+                // 🛡️ ดึง Token จากระบบ
+                const token = sessionStorage.getItem('sessionToken');
+                
                 google.script.run.withSuccessHandler(res => {
                     hideLoading();
                     if(res.success) {
-                        showAlert('ปิดบัญชีเรียบร้อย', 'success');
-                        loadRecordDisbursementData(); // โหลดข้อมูลใหม่
+                        showAlert(res.message || 'สมัครงานสำเร็จ และรับเข้าทำงานโดยอัตโนมัติ');
+                        showSection('userDashboardSection'); 
+                        
+                        document.querySelectorAll('.nav-link').forEach(l => l.classList.remove('active'));
+                        document.getElementById('navUserDashboard').classList.add('active');
+                        
+                        loadUserRegistrations(); 
                     } else {
                         showAlert(res.message, 'error');
                     }
-                }).closeJobAccount(jobTitle);
+                }).registerForActivity(token, { // 🛡️ แนบ Token เป็นตัวแปรแรก
+                    userId: currentUser.id, 
+                    activityId: selectedJobForApply.id,
+                    date: selectedJobForApply.date, 
+                    timeSlot: selectedTimeSlot,
+                    prefix: currentUser.prefix, firstName: currentUser.firstName, lastName: currentUser.lastName,
+                    studentId: currentUser.studentId, faculty: currentUser.faculty, phone: currentUser.phone,
+                    jobTitle: selectedJobForApply.jobTitle, jobAgency: selectedJobForApply.jobAgency
+                });
             }
         });
+    };
+
+
+function loadJobsForAdmin() {
+    showLoading();
+    google.script.run.withSuccessHandler(data => {
+        hideLoading();
+        const tbody = document.querySelector('#jobsTable tbody'); tbody.innerHTML = '';
+        
+        // *** Filtering Logic for Staff ***
+        let filteredData = data;
+        if(currentUser.role === 'staff') {
+            // ถ้าเป็น Staff เห็นเฉพาะงานของตัวเอง (Faculty = Job Agency)
+            filteredData = data.filter(job => job.jobAgency === currentUser.faculty);
+        }
+
+        if(filteredData.length) {
+            document.getElementById('noJobsAdmin').style.display = 'none';
+            filteredData.sort((a,b) => new Date(b.date) - new Date(a.date)); 
+            filteredData.forEach(job => {
+                const row = tbody.insertRow();
+                row.insertCell().textContent = formatDate(job.date);
+                row.insertCell().innerHTML = `<strong>${job.jobTitle || '-'}</strong><br><small style="color:#666">${job.jobAgency || '-'}</small>`;
+                row.insertCell().textContent = job.totalQuota;
+                
+                const filled = (parseInt(job.morningRegistered || 0) + parseInt(job.afternoonRegistered || 0) + parseInt(job.eveningRegistered || 0));
+                row.insertCell().textContent = filled;
+                
+                const statusCell = row.insertCell();
+                // ตรวจสอบสถานะการล็อก
+                statusCell.innerHTML = (job.isLocked && job.isLocked.toString().toUpperCase() === 'TRUE') 
+                    ? '<span style="color:red; font-weight:bold;">ปิดรับ</span>' 
+                    : '<span style="color:green;">เปิดรับ</span>';
+                    
+                const actions = row.insertCell();
+                actions.style.whiteSpace = 'nowrap';
+                const editBtn = document.createElement('button'); editBtn.className = 'btn btn-info'; 
+                editBtn.innerHTML = '<i class="material-icons" style="font-size:16px;">edit</i>'; editBtn.style.padding = '5px 8px'; editBtn.style.marginRight = '4px';
+                editBtn.onclick = () => {
+                    document.getElementById('jobId').value = job.id;
+                    document.getElementById('jobTitle').value = job.jobTitle || '';
+                    document.getElementById('jobAgency').value = job.jobAgency || '';
+                    document.getElementById('jobDescription').value = job.jobDescription || '';
+                    document.getElementById('jobVisibilityType').value = job.visibilityType || 'all';
+                    document.getElementById('jobDate').value = job.date.slice(0,10);
+                    document.getElementById('jobTotalQuota').value = job.totalQuota;
+                    document.getElementById('jobMorningQuota').value = job.morningQuota;
+                    document.getElementById('jobAfternoonQuota').value = job.afternoonQuota;
+                    document.getElementById('jobEveningQuota').value = job.eveningQuota;
+                    document.getElementById('jobModalTitle').textContent = 'แก้ไขประกาศงาน';
+                    document.getElementById('jobModal').style.display = 'flex';
+                };
+                actions.appendChild(editBtn);
+
+                const lockBtn = document.createElement('button'); lockBtn.className = 'btn btn-secondary'; 
+                lockBtn.innerHTML = job.isLocked ? '<i class="material-icons" style="font-size:16px;">lock_open</i>' : '<i class="material-icons" style="font-size:16px;">lock</i>'; 
+                lockBtn.style.padding = '5px 8px'; lockBtn.style.marginRight = '4px';
+                
+                // *** ส่วนที่แก้ไข: เรียกฟังก์ชันยืนยันก่อนล็อก/ปลดล็อก ***
+                lockBtn.onclick = () => { 
+                    confirmLockJob(job.id, job.isLocked); 
+                };
+                actions.appendChild(lockBtn);
+
+                const deleteBtn = document.createElement('button'); deleteBtn.className = 'btn btn-danger'; 
+                deleteBtn.innerHTML = '<i class="material-icons" style="font-size:16px;">delete</i>'; deleteBtn.style.padding = '5px 8px';
+                deleteBtn.onclick = () => {
+                    Swal.fire({
+                         title: 'ลบประกาศนี้?', text: "ข้อมูลผู้สมัครในงานนี้จะหายไป", icon: 'warning',
+                         showCancelButton: true, confirmButtonColor: '#d33', confirmButtonText: 'ลบ'
+                    }).then((r) => {
+                        if(r.isConfirmed) {
+                            showLoading();
+                            google.script.run.withSuccessHandler(res => {
+                                hideLoading();
+                                if(res.success) { showAlert('ลบแล้ว'); loadJobsForAdmin(); }
+                                else showAlert(res.message, 'error');
+                           }).deleteActivity(sessionStorage.getItem('sessionToken'), job.id); // 🛡️ แนบ Token
+                            }
+                    });
+                };
+                actions.appendChild(deleteBtn);
+            });
+            } else document.getElementById('noJobsAdmin').style.display = 'block';
+        }).getAllActivities(sessionStorage.getItem('sessionToken'));
+    }
+
+    document.getElementById('addJobBtn').onclick = () => { 
+        document.getElementById('jobForm').reset();
+        document.getElementById('jobVisibilityType').value = 'all'; 
+        document.getElementById('jobId').value = ''; 
+        document.getElementById('jobModalTitle').textContent = 'สร้างประกาศรับสมัครงานใหม่';
+        
+        // ถ้าเป็น Staff ให้ล็อกหน่วยงานเป็นของตัวเอง
+        if(currentUser.role === 'staff') {
+             const agencySelect = document.getElementById('jobAgency');
+             agencySelect.value = currentUser.faculty;
+             // อาจจะ disable ไม่ให้เปลี่ยนหน่วยงาน
+             // agencySelect.disabled = true; 
+        }
+
+        document.getElementById('jobModal').style.display = 'flex'; 
+    };
+
+document.getElementById('jobForm').onsubmit = (e) => {
+    e.preventDefault();
+    
+    const jobType = document.querySelector('input[name="jobDateType"]:checked').value;
+    let finalDate = document.getElementById('jobDate').value;
+    const total = parseInt(document.getElementById('jobTotalQuota').value) || 0;
+    
+    let morning = 0, afternoon = 0, evening = 0;
+
+    if (total <= 0) {
+        Swal.fire('ข้อมูลไม่ถูกต้อง', 'กรุณาระบุจำนวนที่รับอย่างน้อย 1 คน', 'warning');
+        return;
     }
-    // --- Setup Navigation สำหรับเมนูใหม่ ---
-    setupNavClick('navHistoryLog', 'historyLogSection', () => {
-        populateDepartments('historyDeptFilter');
-        loadHistoryData();
-    });
 
-    setupNavClick('navMonthlyReport', 'monthlyReportSection', () => {
-        populateDepartments('reportDeptFilter');
-        // ตั้งค่าเดือนปัจจุบัน
-        const d = new Date();
-        document.getElementById('reportMonth').value = d.getMonth() + 1;
-        document.getElementById('reportYear').value = d.getFullYear() + 543;
-        loadMonthlyReportData();
-    });
-
-    // --- Function: Load Disbursement History ---
-    function loadHistoryData() {
-        showLoading();
-        const dept = document.getElementById('historyDeptFilter').value;
-        const search = document.getElementById('historySearchInput').value;
-
-        // **หมายเหตุ: คุณต้องสร้างฟังก์ชัน getDisbursementHistoryLog ใน Code.gs**
-        google.script.run.withSuccessHandler(data => {
-            hideLoading();
-            const tbody = document.querySelector('#historyLogTable tbody');
-            tbody.innerHTML = '';
-
-            // กรองข้อมูลเบื้องต้นที่ฝั่ง Client (หรือจะทำที่ Server ก็ได้)
-            let filtered = data;
-            if (dept) filtered = filtered.filter(item => item.department === dept);
-            if (search) filtered = filtered.filter(item => item.project.toLowerCase().includes(search.toLowerCase()));
-
-            if (filtered.length === 0) {
-                document.getElementById('noHistoryData').style.display = 'block';
-                return;
-            }
-            document.getElementById('noHistoryData').style.display = 'none';
-
-            filtered.forEach(item => {
-                const row = tbody.insertRow();
-                row.insertCell().textContent = formatDate(item.date); // ใช้วันที่เบิกจ่ายจริง
-                row.insertCell().innerHTML = `<strong>${item.project}</strong>`;
-                row.insertCell().textContent = item.department;
-                
-                // ยอดเบิก
-                const amountCell = row.insertCell();
-                amountCell.style.textAlign = 'right';
-                amountCell.style.color = '#d32f2f'; // สีแดงเพราะเป็นยอดจ่าย
-                amountCell.textContent = Number(item.amount).toLocaleString();
-
-                // งบคงเหลือ (Backend ต้องคำนวณมาให้ หรือคำนวณสดที่นี่ถ้ารู้ยอดตั้งต้น)
-                const balCell = row.insertCell();
-                balCell.style.textAlign = 'right';
-                balCell.style.fontWeight = 'bold';
-                balCell.style.color = 'green';
-                balCell.textContent = Number(item.balanceAfter).toLocaleString(); 
-            });
-
-        }).getDisbursementHistoryLog(); 
-    }
-
-    // --- Function: Load Monthly Report ---
-    let currentReportData = []; // เก็บไว้สำหรับ Export
-
-    function loadMonthlyReportData() {
-        showLoading();
-        const month = document.getElementById('reportMonth').value;
-        const year = document.getElementById('reportYear').value;
-        const dept = document.getElementById('reportDeptFilter').value;
-
-        // **หมายเหตุ: คุณต้องสร้างฟังก์ชัน getMonthlyReport ใน Code.gs**
-        google.script.run.withSuccessHandler(res => {
-            hideLoading();
-            const tbody = document.querySelector('#monthlyReportTable tbody');
-            tbody.innerHTML = '';
-            
-            if (!res.data || res.data.length === 0) {
-                document.getElementById('noReportResult').style.display = 'block';
-                // Reset stats
-                document.getElementById('repTotalCount').innerText = '0';
-                document.getElementById('repTotalAmount').innerText = '0';
-                document.getElementById('repActiveDept').innerText = '0';
-                currentReportData = [];
-                return;
-            }
-            document.getElementById('noReportResult').style.display = 'none';
-
-            currentReportData = res.data; // เก็บข้อมูลเข้า Cache
-
-            // Update Stats Cards
-            document.getElementById('repTotalCount').innerText = res.summary.count.toLocaleString();
-            document.getElementById('repTotalAmount').innerText = res.summary.totalAmount.toLocaleString();
-            document.getElementById('repActiveDept').innerText = res.summary.activeDeptCount.toLocaleString();
-
-            // Render Table
-            res.data.forEach(item => {
-                const row = tbody.insertRow();
-                row.insertCell().textContent = formatDate(item.date);
-                row.insertCell().textContent = item.department;
-                row.insertCell().textContent = item.project;
-                
-                const amountCell = row.insertCell();
-                amountCell.textContent = Number(item.amount).toLocaleString();
-                amountCell.style.fontWeight = 'bold';
-
-                // Status
-                row.insertCell().innerHTML = `<span class="badge-status-paid">เบิกจ่ายแล้ว</span>`;
-            });
-
-        }).getMonthlyReport(month, year, dept);
-    }
-
-    // --- Function: Export Report to CSV ---
-    function exportMonthlyReportCSV() {
-        if (currentReportData.length === 0) {
-            showAlert('ไม่มีข้อมูลให้ดาวน์โหลด', 'warning');
+    if (jobType === 'multi') {
+        // กรณีเหมาหลายวัน
+        const endDate = document.getElementById('jobEndDate').value;
+        if (finalDate > endDate) {
+            Swal.fire('ข้อมูลไม่ถูกต้อง', 'วันที่สิ้นสุดต้องมากกว่าหรือเท่ากับวันเริ่มต้น', 'error');
             return;
         }
+        finalDate = `${finalDate}|${endDate}`; // บันทึกเป็น "เริ่ม|สิ้นสุด"
+    } else {
+        // กรณีรายวันปกติ
+        morning = parseInt(document.getElementById('jobMorningQuota').value) || 0;
+        afternoon = parseInt(document.getElementById('jobAfternoonQuota').value) || 0;
+        evening = parseInt(document.getElementById('jobEveningQuota').value) || 0;
 
-        const monthName = document.getElementById('reportMonth').options[document.getElementById('reportMonth').selectedIndex].text;
-        const year = document.getElementById('reportYear').value;
-
-        let csv = [];
-        // Header
-        csv.push(`"รายงานประจำเดือน ${monthName} ${year}"`);
-        csv.push(`"วันที่","หน่วยงาน","โครงการ","จำนวนเงิน","สถานะ"`);
-
-        // Rows
-        currentReportData.forEach(item => {
-             // Clean strings to prevent CSV errors
-             const cleanDept = item.department.replace(/"/g, '""');
-             const cleanProj = item.project.replace(/"/g, '""');
-             csv.push(`"${formatDate(item.date)}","${cleanDept}","${cleanProj}","${item.amount}","เบิกจ่ายแล้ว"`);
-        });
-
-        // Download
-        const csvFile = new Blob(["\uFEFF" + csv.join("\n")], { type: "text/csv;charset=utf-8;" });
-        const downloadLink = document.createElement("a");
-        downloadLink.download = `Monthly_Report_${monthName}_${year}.csv`;
-        downloadLink.href = window.URL.createObjectURL(csvFile);
-        downloadLink.style.display = "none";
-        document.body.appendChild(downloadLink);
-        downloadLink.click();
-        document.body.removeChild(downloadLink);
-    }
-    const SESSION_TIMEOUT_MS = 10 * 60 * 1000; 
-    let sessionTimer;
-    function startSessionTimer() {
-        if (currentUser) {
-            clearTimeout(sessionTimer);
-            sessionTimer = setTimeout(() => {
-                Swal.fire({
-                    icon: 'warning',
-                    title: 'หมดเวลาการเชื่อมต่อ',
-                    text: 'เนื่องจากไม่มีการใช้งานเกิน 10 นาที ระบบได้ออกจากระบบโดยอัตโนมัติ',
-                    confirmButtonText: 'ตกลง',
-                    confirmButtonColor: '#d33'
-                }).then(() => {
-                    logout(); // 
-                });
-            }, SESSION_TIMEOUT_MS);
-        }
-    }
-    
-    function resetSessionTimer() {
-        if(currentUser) {
-            startSessionTimer();
+        if ((morning + afternoon + evening) !== total) {
+            Swal.fire({
+                icon: 'error',
+                title: 'โควตาไม่ตรงกัน',
+                html: `คุณระบุยอดรับรวม <b>${total}</b> คน<br>แต่แบ่งช่วงเวลาได้ <b>${morning + afternoon + evening}</b> คน<br>(เช้า ${morning} + บ่าย ${afternoon} + เย็น ${evening})`,
+                confirmButtonText: 'แก้ไข'
+            });
+            return;
         }
     }
 
-    window.onload = resetSessionTimer;
-    document.onmousemove = resetSessionTimer;
-    document.onkeypress = resetSessionTimer;
-    document.ontouchstart = resetSessionTimer; 
-    document.onclick = resetSessionTimer;
-    document.onscroll = resetSessionTimer;
-    
-function confirmLockJob(jobId, currentLockStatus) {
-    const isCurrentlyLocked = currentLockStatus.toString().toUpperCase() === 'TRUE';
-    const newLockStatus = isCurrentlyLocked ? 'FALSE' : 'TRUE';
-    const titleText = isCurrentlyLocked ? 'ยืนยันการปลดล็อก' : 'ยืนยันการปิดรับ';
-    const confirmText = isCurrentlyLocked 
-        ? 'ใช่, เปิดรับสมัครอีกครั้ง' 
-        : 'ใช่, ปิดรับสมัครงานนี้';
-    const color = isCurrentlyLocked ? '#28a745' : '#dc3545'; 
+    const id = document.getElementById('jobId').value;
+    const data = {
+        date: finalDate, // ส่งวันที่ ที่ผ่านการจัดการแล้วไป
+        totalQuota: total,
+        morningQuota: morning,
+        afternoonQuota: afternoon,
+        eveningQuota: evening,
+        jobTitle: document.getElementById('jobTitle').value,
+        jobAgency: document.getElementById('jobAgency').value,
+        visibilityType: document.getElementById('jobVisibilityType').value,
+        jobDescription: document.getElementById('jobDescription').value
+    };
 
-    Swal.fire({
-        title: titleText,
-        text: isCurrentlyLocked 
-            ? "งานจะแสดงให้ผู้สมัครเห็นอีกครั้ง" 
-            : "งานนี้จะไม่แสดงในหน้าสมัครงานของนักศึกษาอีก",
-        icon: 'warning',
-        showCancelButton: true,
-        confirmButtonColor: color,
-        cancelButtonColor: '#6c757d',
-        confirmButtonText: confirmText,
-        cancelButtonText: 'ยกเลิก'
-    }).then((result) => {
-        if (result.isConfirmed) {
-            showLoading(); 
-            
-            // ส่งสถานะใหม่ไปยัง Apps Script
-            google.script.run
-                .withSuccessHandler(() => {
-                    showAlert('อัปเดตสถานะเรียบร้อย', 'success'); 
-                    loadJobsForAdmin(); // โหลดตารางใหม่
-                })
-                .withFailureHandler(err => {
-                    hideLoading();
-                    showAlert(`เกิดข้อผิดพลาด: ${err.message}`, 'error');
-                })
-                .updateActivity(jobId, {isLocked: newLockStatus}); 
-        }
-    });
+    showLoading();
+    const handler = google.script.run.withSuccessHandler(res => {
+        hideLoading();
+        if(res.success) { 
+            document.getElementById('jobModal').style.display = 'none'; 
+            showAlert('บันทึกประกาศงานเรียบร้อย', 'success');
+            loadJobsForAdmin(); 
+        } else { 
+            Swal.fire('เกิดข้อผิดพลาด', res.message, 'error');
+        }
+    }).withFailureHandler(err => {
+        hideLoading();
+        Swal.fire('Error', err.message, 'error');
+    });
+
+    const token = sessionStorage.getItem('sessionToken'); // 🛡️ ดึง Token
+    if(id) handler.updateActivity(token, id, data); else handler.addActivity(token, data);
+};
+
+// Explicit annual registration for existing logged-in students; no duplicate Users rows.
+function renderFiscalRenewalButton_() {
+  if (!currentUser || currentUser.role !== 'user') return;
+  const host = document.getElementById('userDashboardSection');
+  if (!host) return;
+  let panel = document.getElementById('annualFiscalRenewPanel');
+  if (!panel) {
+    panel = document.createElement('div');
+    panel.id = 'annualFiscalRenewPanel';
+    panel.style.cssText = 'border:1px solid #d1d5db;border-radius:10px;padding:12px;margin:14px 0;background:#fff';
+    host.prepend(panel);
+  }
+  panel.textContent = 'กำลังตรวจสอบการสมัครประจำปี...';
+  const token = sessionStorage.getItem('sessionToken');
+  google.script.run.withSuccessHandler(function (r) {
+    if (!r || !r.success) {
+      panel.textContent = r && r.message ? r.message : 'ไม่สามารถตรวจสอบสถานะสมัครประจำปี';
+      return;
+    }
+    const year = Number(r.year || r.activeYear || r.fiscalYear);
+    const validYear = Number.isInteger(year) && year >= 2500;
+    panel.replaceChildren();
+    const heading = document.createElement('strong');
+    heading.textContent = 'การสมัครปีงบประมาณ ' + (validYear ? year : 'ปัจจุบัน');
+    const description = document.createElement('p');
+    description.textContent = r.registered ? 'ลงทะเบียนปีนี้แล้ว' : r.eligible ? 'มีสิทธิ์สมัครปีนี้ กรุณากดยืนยัน' : 'ยังไม่มีสิทธิ์สมัครปีนี้ กรุณาติดต่อเจ้าหน้าที่';
+    panel.append(heading, description);
+    if (!r.registered && r.eligible) {
+      if (!validYear) {
+        const err = document.createElement('p');
+        err.textContent = 'ระบบไม่สามารถระบุปีงบประมาณ กรุณาติดต่อเจ้าหน้าที่';
+        panel.append(err);
+        return;
+      }
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.textContent = 'ยืนยันสมัครปีงบประมาณ ' + year;
+      button.addEventListener('click', function () {
+        if (!window.confirm('ยืนยันสมัครงานระหว่างเรียนประจำปีงบประมาณ ' + year + '?')) return;
+        button.disabled = true;
+        google.script.run.withSuccessHandler(function (res) {
+          if (res && res.success) renderFiscalRenewalButton_();
+          else { button.disabled = false; alert(res && res.message || 'บันทึกไม่สำเร็จ'); }
+        }).withFailureHandler(function (err) {
+          button.disabled = false;
+          alert(err && err.message || 'ยืนยันไม่สำเร็จ');
+        }).registerMyFiscalYear(token);
+      });
+      panel.append(button);
+    }
+  }).withFailureHandler(function (err) {
+    panel.textContent = 'ไม่สามารถตรวจสอบสถานะสมัครประจำปี: ' + (err && err.message || 'โปรดลองใหม่');
+  }).getMyFiscalRegistration(token);
+}
+
+
+/* ===== Monthly printable job summary: student dashboard only ===== */
+let studentMonthlyJobCache = {};
+let studentMonthlyClaimStatusCache = {};
+const monthlyThaiMonths = ['มกราคม','กุมภาพันธ์','มีนาคม','เมษายน','พฤษภาคม','มิถุนายน','กรกฎาคม','สิงหาคม','กันยายน','ตุลาคม','พฤศจิกายน','ธันวาคม'];
+function monthlySafe(v) { return String(v == null ? '' : v).replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch])); }
+function monthlyDateKey(v) {
+  const value = String(v || '').replace(/^'/,'').trim();
+  let m = value.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (m) { const y=+m[1]>2400?+m[1]-543:+m[1]; return `${y}-${m[2].padStart(2,'0')}-${m[3].padStart(2,'0')}`; }
+  m = value.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})$/);
+  if (m) { const y=+m[3]>2400?+m[3]-543:+m[3]; return `${y}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}`; }
+  return null;
+}
+function monthlyJobSlot(slot) {
+  return ({ morning: ['08:30','12:00','3.5'], afternoon:['13:00','16:30','3.5'], evening:['16:30','20:00','3.5'], full:['08:30','16:30','7'] })[slot] || ['—','—','—'];
+}
+// ใช้แสดงช่วงเวลาที่สมัครทั้งตารางงานที่สมัครและรายการสรุปรายเดือน
+// เปลี่ยนเฉพาะข้อความบนหน้าจอ ไม่แก้ค่าที่บันทึกในฐานข้อมูล
+function studentJobSlotDisplay(slot) {
+  const map = {
+    morning: '08.30–12.00 น.',
+    afternoon: '13.00–16.30 น.',
+    evening: '16.30–20.00 น.',
+    full: '08.30–16.30 น.'
+  };
+  const key = String(slot == null ? '' : slot).trim().toLowerCase();
+  return map[key] || String(slot || '-');
+}
+function loadStudentMonthlyJobs() {
+  const wrap = document.getElementById('studentMonthlyJobList');
+  if (!wrap || !currentUser || String(currentUser.role).toLowerCase() !== 'user') return;
+  wrap.textContent = 'กำลังโหลดรายการและสถานะแบบเบิก...';
+  const token = sessionStorage.getItem('sessionToken');
+  // อ่านสถานะจากเซิร์ฟเวอร์ทุกครั้ง เพื่อไม่เปิดให้สร้างแบบเบิกซ้ำ
+  google.script.run.withSuccessHandler(statusRes => {
+    if (!statusRes || !statusRes.success) { wrap.textContent = (statusRes && statusRes.message) || 'ตรวจสอบสถานะแบบเบิกไม่ได้'; return; }
+    studentMonthlyClaimStatusCache = statusRes.claims || {};
+    google.script.run.withSuccessHandler(res => {
+      if (!res || !res.success) { wrap.textContent = (res && res.message) || 'โหลดงานไม่ได้'; return; }
+      const grouped = {};
+      let skipped = 0;
+      (res.items || []).forEach(item => {
+        const day = monthlyDateKey(item.date);
+        if (!day) { skipped++; return; }
+        (grouped[day.slice(0,7)] ||= []).push({...item,dateKey:day});
+      });
+      studentMonthlyJobCache = grouped;
+      // แสดงเฉพาะเดือนที่มีงานรับเข้าทำงานจริง ไม่แสดงเดือนที่มีเพียงสถานะแบบเบิกเก่า
+      const months = Object.keys(grouped).filter(month => Array.isArray(grouped[month]) && grouped[month].length > 0).sort().reverse();
+      wrap.innerHTML = (skipped ? `<p style="color:#b45309">มี ${skipped} รายการที่อ่านวันที่ไม่ได้ กรุณาติดต่อเจ้าหน้าที่</p>` : '')+
+        (months.length ? months.map(month => {
+          const [y,m] = month.split('-').map(Number), data=grouped[month]||[];
+          const claim=studentMonthlyClaimStatusCache[month];
+          const label = `${monthlyThaiMonths[m-1]} ${y+543}`;
+          const statusHtml = claim ? '<strong style="color:#166534">✓ ยืนยันแบบเบิกแล้ว</strong>' : '<span style="color:#64748b">ยังไม่ได้ยืนยันแบบเบิก</span>';
+          const actionHtml = claim
+            ? `<button type="button" class="btn btn-info monthly-reprint-btn" data-month="${month}">พิมพ์แบบเบิกที่ยืนยันแล้ว</button>`
+            : `<button type="button" class="btn btn-info monthly-print-btn" data-month="${month}">ยืนยันวันที่และช่วงเวลาที่เข้าทำงาน</button>`;
+          return `<details class="monthly-job-group" style="margin:10px 0;border:1px solid #ddd;border-radius:8px;padding:12px">
+            <summary style="cursor:pointer;font-weight:600">${label} — ${data.length} งาน ${claim?'✓ ยืนยันแบบเบิกแล้ว':''}</summary>
+            <div style="margin:8px 0">${statusHtml}</div>
+            <div style="padding:10px 0;overflow-x:auto"><table class="clean-table" style="width:100%"><thead><tr><th>วันที่</th><th>งาน</th><th>หน่วยงาน</th><th>ช่วงเวลาที่สมัคร</th></tr></thead><tbody>
+            ${data.map(row=>`<tr><td>${monthlySafe(row.dateKey)}</td><td>${monthlySafe(row.title)}</td><td>${monthlySafe(row.agency)}</td><td>${monthlySafe(studentJobSlotDisplay(row.slot))}</td></tr>`).join('')}</tbody></table></div>
+            ${actionHtml}
+          </details>`;
+        }).join('') : '<p>ยังไม่มีรายการรับเข้าทำงาน</p>');
+      wrap.querySelectorAll('.monthly-print-btn').forEach(btn => btn.addEventListener('click',()=>showMonthlyClaimConfirm(btn.dataset.month)));
+      wrap.querySelectorAll('.monthly-reprint-btn').forEach(btn => btn.addEventListener('click',()=>{
+        const month=btn.dataset.month, claim=studentMonthlyClaimStatusCache[month];
+        if (!claim) return;
+        // ดึงรายการจากแบบเบิกที่บันทึกจริง ไม่พึ่ง cache ของงานที่ยัง active
+        google.script.run.withSuccessHandler(result => {
+          if (!result || !result.success) return showAlert((result && result.message) || 'โหลดแบบเบิกไม่สำเร็จ', 'error');
+          const items = (result.items || []).map(item => ({ ...item, dateKey: monthlyDateKey(item.date) }));
+          if (!items.length) return showAlert('แบบเบิกที่ยืนยันไม่มีรายการให้พิมพ์ กรุณาติดต่อเจ้าหน้าที่', 'warning');
+          studentMonthlyJobCache[month] = items;
+          printStudentJobMonth(month, null, claim.registrationIds);
+        }).withFailureHandler(err => showAlert('ดึงรายการแบบเบิกไม่ได้: ' + (err.message || err), 'error'))
+          .getMyConfirmedClaimPrintItems(sessionStorage.getItem('sessionToken'), month);
+      }));
+    }).withFailureHandler(err=>{wrap.textContent='โหลดงานไม่ได้: '+(err.message||err);})
+      .getMyMonthlyJobApplications(token);
+  }).withFailureHandler(err=>{wrap.textContent='ตรวจสอบสถานะไม่ได้: '+(err.message||err);})
+    .getMyMonthlyClaimStatuses(token);
+}
+function showMonthlyClaimConfirm(month) {
+  if (studentMonthlyClaimStatusCache[month]) return showAlert('ยืนยันแบบเบิกเดือนนี้แล้ว กรุณาใช้ปุ่มพิมพ์แบบเบิกที่ยืนยันแล้ว','info');
+  const rows=(studentMonthlyJobCache[month]||[]).filter(x=>x.id&&x.dateKey);
+  if (!rows.length) return showAlert('ไม่พบงานที่สมัครในเดือนนี้','warning');
+  // แยกงานตามวัน+ช่วงเวลา: ในวันเดียวกันอาจสมัครหลายงานหรือหลายช่วงเวลา
+  const html = `<div style="text-align:left;max-height:55vh;overflow-y:auto">`+
+    `<p style="margin:0 0 10px">ตรวจสอบ <b>วันและเวลาตามที่สมัคร</b> แล้วติ๊กเฉพาะช่วงที่เข้าทำงานจริง ไม่ต้องเลือกช่วงที่ขาดงาน</p>`+
+    rows.map((r,i)=>{const [start,end]=monthlyJobSlot(r.slot);
+      return `<label style="display:block;padding:10px 8px;border-bottom:1px solid #ddd;cursor:pointer"><input type="checkbox" class="claim-reg" value="${monthlySafe(String(r.id))}" style="margin-right:8px">`+
+        `<b>${monthlySafe(r.dateKey)}</b> | เวลา ${monthlySafe(start)}–${monthlySafe(end)} น. `+
+        `<div style="padding-left:26px">${monthlySafe(r.title)} (${monthlySafe(r.agency||'-')})</div></label>`;
+    }).join('')+`</div>`;
+  Swal.fire({title:'ยืนยันวันที่และเวลาที่เข้าทำงานจริง',html,width:650,showCancelButton:true,
+    confirmButtonText:'ยืนยันและสร้างแบบเบิก',cancelButtonText:'กลับ',
+    preConfirm:()=>{const selected=[...document.querySelectorAll('.swal2-popup .claim-reg:checked')].map(el=>el.value);
+      if(!selected.length){Swal.showValidationMessage('กรุณาเลือกวันที่และช่วงเวลาที่เข้าทำงานจริงอย่างน้อย 1 รายการ');return false;}
+      return [...new Set(selected)];}
+  }).then(result=>{
+    if (!result.isConfirmed) return;
+    const ids=result.value;
+    showLoading();
+    google.script.run.withSuccessHandler(res=>{
+      hideLoading();
+      if(!res||!res.success) return showAlert(res&&res.message||'บันทึกไม่สำเร็จ','error');
+      studentMonthlyClaimStatusCache[month]={claimId:res.claimId,registrationIds:ids,status:'ยืนยันแบบเบิกแล้ว'};
+      Swal.fire({icon:'success',title:'ยืนยันแบบเบิกแล้ว',text:'บันทึกวันที่และช่วงเวลาที่เข้าทำงานจริงและยืนยันแบบเบิกเรียบร้อยแล้ว',confirmButtonText:'พิมพ์แบบเบิก'}).then(()=>{
+        printStudentJobMonth(month,null,ids);
+        // โหลดสถานะใหม่หลังหน้าตัวอย่างพิมพ์ปิด ไม่แทรกระหว่างสร้างหน้าพิมพ์
+        window.addEventListener('afterprint', () => loadStudentMonthlyJobs(), { once: true });
+      });
+    }).withFailureHandler(err=>{hideLoading();showAlert(err.message||String(err),'error');})
+      .saveMyMonthlyClaimDraft(sessionStorage.getItem('sessionToken'),month,ids);
+  });
+}
+
+function printStudentJobMonth(month, chosenDays, chosenRegistrationIds) {
+  // ใบลงเวลาจากงานที่สมัคร: ข้อมูลแยกจาก Timekeeping / TimeLogs โดยเด็ดขาด
+  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(String(month))) return showAlert('เดือนที่เลือกไม่ถูกต้อง', 'error');
+  const items = (studentMonthlyJobCache[month] || []).filter(item => item.dateKey && item.dateKey.slice(0,7) === month && (!Array.isArray(chosenDays) || chosenDays.includes(item.dateKey)) && (!Array.isArray(chosenRegistrationIds) || chosenRegistrationIds.map(String).includes(String(item.id))))
+    .slice().sort((a,b) => a.dateKey.localeCompare(b.dateKey));
+  if (!items.length) return showAlert('ไม่พบงานที่รับเข้าทำงานของเดือนนี้', 'warning');
+  const report = document.getElementById('monthlyApplicationPrint');
+  const template = document.getElementById('printTimeSheetArea');
+  if (!report || !template) return showAlert('ไม่พบแบบฟอร์ม Timekeeping กรุณาตรวจสอบไฟล์หน้าเว็บ', 'error');
+  // ใช้หน้าตา/ลำดับคอลัมน์แบบเดียวกับ Timekeeping โดยไม่เรียก API ของ Timekeeping
+  report.innerHTML = template.innerHTML;
+  const fill = (id, value) => {
+    const el = report.querySelector('#' + id);
+    if (el) el.textContent = value == null || value === '' ? '-' : String(value);
+  };
+  const [year, nmonth] = month.split('-').map(Number);
+  const agencies = [...new Set(items.map(item => String(item.agency || '').trim()).filter(Boolean))];
+  const agencyName = agencies.map(name => typeof getTimesheetAgencyName === 'function'
+    ? getTimesheetAgencyName(name)
+    : (typeof getOfficialAgencyName === 'function' ? getOfficialAgencyName(name) : name)).join(' / ') || '-';
+  const first = items[0];
+  const fullName = first.studentName || [currentUser && currentUser.prefix || '', currentUser && currentUser.firstName || '', currentUser && currentUser.lastName || ''].join(' ').trim();
+  fill('printAgency', agencyName);
+  fill('printMonth', `${monthlyThaiMonths[nmonth - 1]} ${year + 543}`);
+  fill('printName', fullName);
+  fill('printSignName', fullName);
+  fill('printId', first.studentId || (currentUser && currentUser.studentId));
+  fill('printFaculty', first.faculty || (currentUser && currentUser.faculty));
+
+  const grouped = {};
+  items.forEach(item => { (grouped[item.dateKey] ||= []).push(item); });
+  let total = 0, serial = 0;
+  const rows = Object.entries(grouped).map(([day, dayItems]) => {
+    const [yy, mm, dd] = day.split('-').map(Number);
+    const date = `${dd}/${mm}/${yy + 543}`;
+    const dailyHours = dayItems.reduce((sum, item) => {
+      const hrs = Number(monthlyJobSlot(item.slot)[2]);
+      return sum + (Number.isFinite(hrs) ? hrs : 0);
+    }, 0);
+    // คำนวณจากช่วงเวลาประกาศเท่านั้น ไม่ใช่ค่าตอบแทนที่ลงเวลาจริงหรือได้รับอนุมัติ
+    const dailyPay = dailyHours >= 7 ? 300 : dailyHours >= 3.5 ? 150 : 0;
+    total += dailyPay;
+    return dayItems.map((item, index) => {
+      const [start, end] = monthlyJobSlot(item.slot);
+      const centeredCell = 'style="text-align:center !important;vertical-align:middle !important;padding:4px 2px;"';
+      const dateCell = index === 0 ? `<td rowspan="${dayItems.length}" ${centeredCell}>${monthlySafe(date)}</td>` : '';
+      const payCells = index === 0
+        ? `<td rowspan="${dayItems.length}" ${centeredCell}>${monthlySafe(String(Number(dailyHours.toFixed(2))))}</td><td rowspan="${dayItems.length}" ${centeredCell}>${dailyPay.toLocaleString('th-TH')}</td>` : '';
+      const jobTitle = String(item.title || '-');
+      const detail = agencies.length > 1 ? `${jobTitle} (${item.agency || '-'})` : jobTitle;
+      // คอลัมน์เหมือน Timekeeping: ลำดับ | วันที่ | มา | กลับ | ชม. | บาท | รายละเอียด | ลายมือชื่อ
+      return `<tr><td ${centeredCell}>${++serial}</td>${dateCell}<td ${centeredCell}>${monthlySafe(start)}</td><td ${centeredCell}>${monthlySafe(end)}</td>${payCells}<td style="text-align:left;padding-left:5px;vertical-align:middle">${monthlySafe(detail)}</td><td ${centeredCell}></td></tr>`;
+    }).join('');
+  }).join('');
+  const tbody = report.querySelector('#printTableBody');
+  if (!tbody) return showAlert('แบบฟอร์มไม่พบตารางลงเวลา', 'error');
+  tbody.innerHTML = rows;
+  // จัดหัวคอลัมน์และค่าของวัน เวลา ชั่วโมง เงิน ให้อยู่กลางช่องทั้งบนหน้าจอและตอนพิมพ์
+  report.querySelectorAll('.report-table thead th').forEach(th => {
+    th.style.setProperty('text-align', 'center', 'important');
+    th.style.setProperty('vertical-align', 'middle', 'important');
+  });
+  fill('printTotalAmount', total.toLocaleString('th-TH'));
+  fill('printTotalAmountText', typeof BAHTTEXT === 'function' ? BAHTTEXT(total) : '');
+  report.querySelectorAll('[id]').forEach(el => el.removeAttribute('id'));
+  report.classList.add('paper-sheet');
+  // พื้นที่นี้เดิมมี inline display:none: ต้องทำให้เบราว์เซอร์ layout ได้ก่อน print preview
+  // ซ่อนไว้นอกจอขณะดูหน้าเว็บ; กฎ @media print จะย้ายกลับมายังหน้ากระดาษ A4
+  // Move the printable report directly under <body> so hidden .section/modal ancestors cannot blank the preview.
+  const originalParent = report.parentNode;
+  const originalNextSibling = report.nextSibling;
+  if (originalParent && report.parentNode !== document.body) document.body.appendChild(report);
+  const printStyle = document.createElement('style');
+  printStyle.setAttribute('data-monthly-claim-print', 'true');
+  printStyle.textContent = '\n/* Monthly application claim print: guaranteed visible print root. */\n@media print {\n  @page { size: A4 portrait; margin: 10mm; }\n  /* Hidden application layout must not reserve a blank paper page. */\n  body.print-mode-monthly-application { margin: 0 !important; padding: 0 !important; min-height: 0 !important; height: auto !important; }\n  body.print-mode-monthly-application > :not(#monthlyApplicationPrint) { display: none !important; }\n  body.print-mode-monthly-application > #monthlyApplicationPrint,\n  body.print-mode-monthly-application > #monthlyApplicationPrint * {\n    visibility: visible !important;\n  }\n  body.print-mode-monthly-application > #monthlyApplicationPrint {\n    display: block !important;\n    position: static !important;\n    inset: auto !important;\n    left: auto !important;\n    top: auto !important;\n    width: 100% !important;\n    max-width: none !important;\n    margin: 0 !important;\n    padding: 0 !important;\n    background: #fff !important;\n    box-shadow: none !important;\n    border: 0 !important;\n    overflow: visible !important;\n    transform: none !important;\n    min-height: 0 !important;\n    height: auto !important;\n    break-before: auto !important;\n    page-break-before: auto !important;\n    break-after: auto !important;\n  }\n  body.print-mode-monthly-application > #monthlyApplicationPrint .report-table {\n    border-collapse: collapse !important;\n    width: 100% !important;\n  }\n  body.print-mode-monthly-application > #monthlyApplicationPrint .report-table th,\n  body.print-mode-monthly-application > #monthlyApplicationPrint .report-table td {\n    border: 1px solid #000 !important;\n  }\n}\n';
+  document.head.appendChild(printStyle);
+  const previousStyle = report.getAttribute('style');
+  report.style.setProperty('display', 'block', 'important');
+  report.style.setProperty('position', 'fixed');
+  report.style.setProperty('left', '-10000px');
+  report.style.setProperty('top', '0');
+  report.style.setProperty('width', '190mm');
+  report.style.setProperty('background', '#fff');
+  document.body.classList.add('print-mode-monthly-application');
+  let finished = false;
+  const cleanup = () => {
+    if (finished) return;
+    finished = true;
+    document.body.classList.remove('print-mode-monthly-application');
+    report.classList.remove('paper-sheet');
+    if (previousStyle === null) report.removeAttribute('style');
+    else report.setAttribute('style', previousStyle);
+    report.innerHTML = '';
+    printStyle.remove();
+    if (originalParent) {
+      if (originalNextSibling && originalNextSibling.parentNode === originalParent) originalParent.insertBefore(report, originalNextSibling);
+      else originalParent.appendChild(report);
+    }
+    window.removeEventListener('afterprint', cleanup);
+  };
+  window.addEventListener('afterprint', cleanup);
+  // รออย่างน้อย 2 รอบการวาดหน้า และให้ฟอนต์พร้อมก่อนเปิดตัวอย่างพิมพ์
+  const nextFrame = () => new Promise(resolve => requestAnimationFrame(resolve));
+  (async () => {
+    try {
+      if (document.fonts && document.fonts.ready) {
+        await Promise.race([document.fonts.ready, new Promise(resolve => setTimeout(resolve, 1500))]);
+      }
+      await nextFrame();
+      await nextFrame();
+      // บังคับอ่าน layout เพื่อให้ตารางและข้อความได้รับการจัดหน้าก่อนพิมพ์
+      void report.offsetHeight;
+      if (finished) return;
+      window.print();
+    } catch (err) {
+      cleanup();
+      showAlert('ไม่สามารถเปิดหน้าพิมพ์ได้: ' + (err && err.message || err), 'error');
+    }
+  })();
 }
