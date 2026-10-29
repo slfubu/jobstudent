@@ -839,7 +839,7 @@ document.getElementById('confirmApplyBtn').onclick = () => {
                 google.script.run.withSuccessHandler(res => {
                     hideLoading();
                     if(res.success) {
-                        showAlert('สมัครงานสำเร็จ รอผลการพิจารณา');
+                        showAlert(res.message || 'สมัครงานสำเร็จ และรับเข้าทำงานโดยอัตโนมัติ');
                         showSection('userDashboardSection'); 
                         
                         document.querySelectorAll('.nav-link').forEach(l => l.classList.remove('active'));
