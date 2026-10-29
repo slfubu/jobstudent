@@ -1120,7 +1120,7 @@ function studentJobSlotDisplay(slot) {
 function loadStudentMonthlyJobs() {
   const wrap = document.getElementById('studentMonthlyJobList');
   if (!wrap || !currentUser || String(currentUser.role).toLowerCase() !== 'user') return;
-  wrap.textContent = 'กำลังโหลดรายการและสถานะแบบเบิก...';
+  wrap.textContent = 'กำลังโหลดรายการงานที่สมัครและแบบเบิกที่ยืนยัน...';
   const token = sessionStorage.getItem('sessionToken');
   // อ่านสถานะจากเซิร์ฟเวอร์ทุกครั้ง เพื่อไม่เปิดให้สร้างแบบเบิกซ้ำ
   google.script.run.withSuccessHandler(statusRes => {
