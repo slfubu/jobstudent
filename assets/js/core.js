@@ -578,7 +578,7 @@ function loadUserRegistrations() {
                 row.insertCell().innerHTML = `<b>${r.jobTitle || 'งานทั่วไป'}</b>`;
                 row.insertCell().textContent = r.jobAgency || '-';
 
-                let slotTh = r.timeSlot === 'morning' ? 'เช้า' : (r.timeSlot === 'afternoon' ? 'บ่าย' : 'เย็น');
+                let slotTh = studentJobSlotDisplay(r.timeSlot);
                 row.insertCell().textContent = `${formatDate(r.activityDate)} (${slotTh})`;
                 
                 const statusCell = row.insertCell();
@@ -1105,6 +1105,18 @@ function monthlyDateKey(v) {
 function monthlyJobSlot(slot) {
   return ({ morning: ['08:30','12:00','3.5'], afternoon:['13:00','16:30','3.5'], evening:['16:30','20:00','3.5'], full:['08:30','16:30','7'] })[slot] || ['—','—','—'];
 }
+// ใช้แสดงช่วงเวลาที่สมัครทั้งตารางงานที่สมัครและรายการสรุปรายเดือน
+// เปลี่ยนเฉพาะข้อความบนหน้าจอ ไม่แก้ค่าที่บันทึกในฐานข้อมูล
+function studentJobSlotDisplay(slot) {
+  const map = {
+    morning: '08.30–12.00 น.',
+    afternoon: '13.00–16.30 น.',
+    evening: '16.30–20.00 น.',
+    full: '08.30–16.30 น.'
+  };
+  const key = String(slot == null ? '' : slot).trim().toLowerCase();
+  return map[key] || String(slot || '-');
+}
 function loadStudentMonthlyJobs() {
   const wrap = document.getElementById('studentMonthlyJobList');
   if (!wrap || !currentUser || String(currentUser.role).toLowerCase() !== 'user') return;
@@ -1138,7 +1150,7 @@ function loadStudentMonthlyJobs() {
             <summary style="cursor:pointer;font-weight:600">${label} — ${data.length} งาน ${claim?'✓ ยืนยันแบบเบิกแล้ว':''}</summary>
             <div style="margin:8px 0">${statusHtml}</div>
             <div style="padding:10px 0;overflow-x:auto"><table class="clean-table" style="width:100%"><thead><tr><th>วันที่</th><th>งาน</th><th>หน่วยงาน</th><th>ช่วงเวลาที่สมัคร</th></tr></thead><tbody>
-            ${data.map(row=>`<tr><td>${monthlySafe(row.dateKey)}</td><td>${monthlySafe(row.title)}</td><td>${monthlySafe(row.agency)}</td><td>${monthlySafe(row.slot)}</td></tr>`).join('')}</tbody></table></div>
+            ${data.map(row=>`<tr><td>${monthlySafe(row.dateKey)}</td><td>${monthlySafe(row.title)}</td><td>${monthlySafe(row.agency)}</td><td>${monthlySafe(studentJobSlotDisplay(row.slot))}</td></tr>`).join('')}</tbody></table></div>
             ${actionHtml}
           </details>`;
         }).join('') : '<p>ยังไม่มีรายการรับเข้าทำงาน</p>');
