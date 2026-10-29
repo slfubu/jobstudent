@@ -558,7 +558,7 @@ function loadUserRegistrations() {
                     statusText = 'รับเข้าทำงาน'; 
                     color = 'var(--success-color)'; 
                     statusClass = 'status-confirmed';
-                    manageButtonHtml = `<span style="color:#16803c;font-size:12px">แสดงในสรุปรายเดือน</span>`;
+                    manageButtonHtml = `<button class="btn btn-danger-outline btn-cancel-reg" data-id="${monthlySafe(r.id)}" style="padding:5px 10px;font-size:12px;border:1px solid #b91c1c;color:#b91c1c;background:#fff">ยกเลิกสมัคร</button>`;
                 } 
                 else if(status === 'cancelled' || status === 'rejected' || status === 'ไม่ผ่าน') { 
                     statusText = 'ไม่ผ่าน/ยกเลิก'; 
@@ -627,10 +627,12 @@ function loadUserRegistrations() {
             // 🛡️ ดึง Token ก่อนส่งไปหลังบ้าน
             const token = sessionStorage.getItem('sessionToken');
             
-            google.script.run.withSuccessHandler(() => { 
+            google.script.run.withSuccessHandler(result => { 
+                hideLoading();
+                if (!result || !result.success) return showAlert((result && result.message) || 'ยกเลิกไม่สำเร็จ', 'error');
                 showAlert('ยกเลิกเรียบร้อย', 'success'); 
                 loadUserRegistrations(); 
-            }).updateRegistration(token, id, {status: 'cancelled'}); // 🛡️ ส่ง token เข้าไปด้วย
+            }).withFailureHandler(err => { hideLoading(); showAlert(err.message || String(err), 'error'); }).cancelMyJobApplication(token, id); // 🛡️ ส่ง token เข้าไปด้วย
         }
     });
 }
@@ -1126,17 +1128,40 @@ function loadStudentMonthlyJobs() {
           <summary style="cursor:pointer;font-weight:600">${label} — ${data.length} รายการ</summary>
           <div style="padding:10px 0;overflow-x:auto"><table class="clean-table" style="width:100%"><thead><tr><th>วันที่</th><th>งาน</th><th>หน่วยงาน</th><th>ช่วงเวลา</th></tr></thead><tbody>
           ${data.map(row=>`<tr><td>${monthlySafe(row.dateKey)}</td><td>${monthlySafe(row.title)}</td><td>${monthlySafe(row.agency)}</td><td>${monthlySafe(row.slot)}</td></tr>`).join('')}</tbody></table></div>
-          <button type="button" class="btn btn-info monthly-print-btn" data-month="${month}">พิมพ์ใบลงเวลารวมเดือนนี้</button>
+          <button type="button" class="btn btn-info monthly-print-btn" data-month="${month}">สร้างแบบเบิกเงิน</button>
         </details>`;
       }).join('') : '<p>ยังไม่มีรายการรับเข้าทำงานที่แสดงรายเดือนได้</p>');
-    wrap.querySelectorAll('.monthly-print-btn').forEach(btn => btn.addEventListener('click', ()=>printStudentJobMonth(btn.dataset.month)));
+    wrap.querySelectorAll('.monthly-print-btn').forEach(btn => btn.addEventListener('click', ()=>showMonthlyClaimConfirm(btn.dataset.month)));
   }).withFailureHandler(err => { wrap.textContent = 'โหลดรายการไม่ได้: '+(err.message||err); })
     .getMyMonthlyJobApplications(sessionStorage.getItem('sessionToken'));
 }
-function printStudentJobMonth(month) {
+function showMonthlyClaimConfirm(month) {
+  const rows = (studentMonthlyJobCache[month] || []).filter(x => x.id && x.dateKey);
+  if (!rows.length) return showAlert('ไม่พบรายการงานสำหรับเดือนนี้', 'warning');
+  const days = [...new Set(rows.map(x => x.dateKey))].sort();
+  const html = `<div style="text-align:left;max-height:50vh;overflow-y:auto">` +
+    `<p>เลือกเฉพาะวันที่เข้าปฏิบัติงานจริง (ยังต้องผ่านการตรวจสอบของหน่วยงาน)</p>` +
+    days.map(d => `<label style="display:block;padding:8px;border-bottom:1px solid #ddd"><input type="checkbox" class="claim-day" value="${monthlySafe(d)}" style="margin-right:9px">${monthlySafe(d)} — ${rows.filter(r=>r.dateKey===d).map(r=>monthlySafe(r.title)).join(', ')}</label>`).join('') + `</div>`;
+  Swal.fire({title:'ยืนยันวันที่ทำงานจริง',html,showCancelButton:true,confirmButtonText:'สร้างแบบเบิกเงิน',cancelButtonText:'ยกเลิก',
+    preConfirm:()=> {const selected=[...document.querySelectorAll('.swal2-popup .claim-day:checked')].map(el=>el.value);if(!selected.length){Swal.showValidationMessage('กรุณาเลือกอย่างน้อย 1 วัน');return false;}return selected;}
+  }).then(result=>{
+    if (!result.isConfirmed) return;
+    const daysChosen=result.value;
+    const registrationIds=rows.filter(r=>daysChosen.includes(r.dateKey)).map(r=>String(r.id));
+    showLoading();
+    google.script.run.withSuccessHandler(res=>{
+      hideLoading();
+      if(!res || !res.success) return showAlert((res && res.message)||'บันทึกไม่สำเร็จ','error');
+      printStudentJobMonth(month, daysChosen);
+    }).withFailureHandler(err=>{hideLoading();showAlert(err.message||String(err),'error');})
+      .saveMyMonthlyClaimDraft(sessionStorage.getItem('sessionToken'),month,registrationIds);
+  });
+}
+
+function printStudentJobMonth(month, chosenDays) {
   // ใบลงเวลาจากงานที่สมัคร: ข้อมูลแยกจาก Timekeeping / TimeLogs โดยเด็ดขาด
   if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(String(month))) return showAlert('เดือนที่เลือกไม่ถูกต้อง', 'error');
-  const items = (studentMonthlyJobCache[month] || []).filter(item => item.dateKey && item.dateKey.slice(0,7) === month)
+  const items = (studentMonthlyJobCache[month] || []).filter(item => item.dateKey && item.dateKey.slice(0,7) === month && (!Array.isArray(chosenDays) || chosenDays.includes(item.dateKey)))
     .slice().sort((a,b) => a.dateKey.localeCompare(b.dateKey));
   if (!items.length) return showAlert('ไม่พบงานที่รับเข้าทำงานของเดือนนี้', 'warning');
   const report = document.getElementById('monthlyApplicationPrint');
