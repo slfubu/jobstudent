@@ -544,6 +544,7 @@ function loadUserRegistrations() {
         
         tbody.innerHTML = '';
         mobileContainer.innerHTML = '';
+        loadStudentMonthlyJobs();
         
         if(regs && regs.length > 0) {
             document.getElementById('noUserRegistrations').style.display = 'none';
@@ -557,12 +558,7 @@ function loadUserRegistrations() {
                     statusText = 'รับเข้าทำงาน'; 
                     color = 'var(--success-color)'; 
                     statusClass = 'status-confirmed';
-  
-                    manageButtonHtml = `
-                        <button class="btn btn-info" onclick="printSingleJobTimesheet('${r.id}')" style="padding: 6px 12px; font-size: 13px; border-radius: 20px; box-shadow: 0 2px 5px rgba(0,0,0,0.1);">
-                           <i class="material-icons" style="font-size:16px; vertical-align:text-bottom;">print</i> ใบลงเวลา
-                        </button>
-                    `;
+                    manageButtonHtml = `<span style="color:#16803c;font-size:12px">แสดงในสรุปรายเดือน</span>`;
                 } 
                 else if(status === 'cancelled' || status === 'rejected' || status === 'ไม่ผ่าน') { 
                     statusText = 'ไม่ผ่าน/ยกเลิก'; 
@@ -1088,4 +1084,72 @@ function renderFiscalRenewalButton_() {
   }).withFailureHandler(function (err) {
     panel.textContent = 'ไม่สามารถตรวจสอบสถานะสมัครประจำปี: ' + (err && err.message || 'โปรดลองใหม่');
   }).getMyFiscalRegistration(token);
+}
+
+
+/* ===== Monthly printable job summary: student dashboard only ===== */
+let studentMonthlyJobCache = {};
+const monthlyThaiMonths = ['มกราคม','กุมภาพันธ์','มีนาคม','เมษายน','พฤษภาคม','มิถุนายน','กรกฎาคม','สิงหาคม','กันยายน','ตุลาคม','พฤศจิกายน','ธันวาคม'];
+function monthlySafe(v) { return String(v == null ? '' : v).replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch])); }
+function monthlyDateKey(v) {
+  const value = String(v || '').replace(/^'/,'').trim();
+  let m = value.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (m) { const y=+m[1]>2400?+m[1]-543:+m[1]; return `${y}-${m[2].padStart(2,'0')}-${m[3].padStart(2,'0')}`; }
+  m = value.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})$/);
+  if (m) { const y=+m[3]>2400?+m[3]-543:+m[3]; return `${y}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}`; }
+  return null;
+}
+function monthlyJobSlot(slot) {
+  return ({ morning: ['08:30','12:00','3.5'], afternoon:['13:00','16:30','3.5'], evening:['16:30','20:00','3.5'], full:['08:30','16:30','7'] })[slot] || ['—','—','—'];
+}
+function loadStudentMonthlyJobs() {
+  const wrap = document.getElementById('studentMonthlyJobList');
+  if (!wrap || !currentUser || String(currentUser.role).toLowerCase() !== 'user') return;
+  wrap.textContent = 'กำลังโหลดรายการแยกเดือน...';
+  google.script.run.withSuccessHandler(res => {
+    if (!res || !res.success) { wrap.textContent = res && res.message || 'ไม่สามารถโหลดข้อมูลได้'; return; }
+    const grouped = {};
+    let skipped = 0;
+    (res.items || []).forEach(item => {
+      const day = monthlyDateKey(item.date);
+      if (!day) { skipped++; return; }
+      const month = day.slice(0,7);
+      (grouped[month] ||= []).push({...item, dateKey:day});
+    });
+    studentMonthlyJobCache = grouped;
+    const months = Object.keys(grouped).sort().reverse();
+    wrap.innerHTML = (skipped ? `<p style="color:#b45309">มี ${skipped} รายการที่อ่านวันที่ไม่ได้ กรุณาติดต่อเจ้าหน้าที่</p>` : '') +
+      (months.length ? months.map(month => {
+        const [y,m] = month.split('-').map(Number), data=grouped[month];
+        const label = `${monthlyThaiMonths[m-1]} ${y+543}`;
+        return `<details class="monthly-job-group" style="margin:10px 0;border:1px solid #ddd;border-radius:8px;padding:12px">
+          <summary style="cursor:pointer;font-weight:600">${label} — ${data.length} รายการ</summary>
+          <div style="padding:10px 0;overflow-x:auto"><table class="clean-table" style="width:100%"><thead><tr><th>วันที่</th><th>งาน</th><th>หน่วยงาน</th><th>ช่วงเวลา</th></tr></thead><tbody>
+          ${data.map(row=>`<tr><td>${monthlySafe(row.dateKey)}</td><td>${monthlySafe(row.title)}</td><td>${monthlySafe(row.agency)}</td><td>${monthlySafe(row.slot)}</td></tr>`).join('')}</tbody></table></div>
+          <button type="button" class="btn btn-info monthly-print-btn" data-month="${month}">พิมพ์ใบลงเวลารวมเดือนนี้</button>
+        </details>`;
+      }).join('') : '<p>ยังไม่มีรายการรับเข้าทำงานที่แสดงรายเดือนได้</p>');
+    wrap.querySelectorAll('.monthly-print-btn').forEach(btn => btn.addEventListener('click', ()=>printStudentJobMonth(btn.dataset.month)));
+  }).withFailureHandler(err => { wrap.textContent = 'โหลดรายการไม่ได้: '+(err.message||err); })
+    .getMyMonthlyJobApplications(sessionStorage.getItem('sessionToken'));
+}
+function printStudentJobMonth(month) {
+  const items = (studentMonthlyJobCache[month] || []).slice().sort((a,b)=>a.dateKey.localeCompare(b.dateKey));
+  if (!items.length) return showAlert('ไม่พบงานสำหรับเดือนนี้','warning');
+  const [year,number] = month.split('-').map(Number);
+  const report = document.getElementById('monthlyApplicationPrint');
+  if (!report) return showAlert('ไม่พบพื้นที่พิมพ์เอกสาร กรุณาติดตั้งไฟล์หน้าเว็บให้ครบ','error');
+  const agencies = [...new Set(items.map(i=>i.agency))];
+  const first = items[0];
+  report.innerHTML = `<h3 style="text-align:center;margin:0 0 12px">แบบลงเวลาและบันทึกภาระจ้างงานระหว่างเรียน มหาวิทยาลัยอุบลราชธานี</h3>
+    <p>ประจำเดือน: <b>${monthlyThaiMonths[number-1]} ${year+543}</b> &nbsp; หน่วยงาน: ${monthlySafe(agencies.join(', '))}</p>
+    <p>ชื่อ-สกุล: ${monthlySafe(first.studentName)} &nbsp; รหัสนักศึกษา: ${monthlySafe(first.studentId)} &nbsp; คณะ: ${monthlySafe(first.faculty)}</p>
+    <table class="monthly-print-table"><thead><tr><th>ลำดับ</th><th>วันที่</th><th>เวลามา</th><th>เวลากลับ</th><th>ชั่วโมงตามประกาศ</th><th>รายละเอียดงาน</th><th>หน่วยงาน</th><th>ลงชื่อ</th></tr></thead><tbody>
+    ${items.map((item,i)=>{const slot=monthlyJobSlot(item.slot);const date=item.dateKey.split('-'); return `<tr><td>${i+1}</td><td>${date[2]}/${date[1]}/${Number(date[0])+543}</td><td>${slot[0]}</td><td>${slot[1]}</td><td>${slot[2]}</td><td>${monthlySafe(item.title)}</td><td>${monthlySafe(item.agency)}</td><td></td></tr>`;}).join('')}</tbody></table>
+    <p style="font-size:12px">หมายเหตุ: เอกสารนี้จัดทำจากรายการสมัครงานที่ได้รับเข้าทำงาน ไม่ใช่หลักฐานยืนยันว่าได้ปฏิบัติงานจริง ไม่ใช่ใบอนุมัติหรือหลักฐานเบิกจ่าย กรุณาตรวจสอบและบันทึกเวลาจริงในเมนูระบบลงเวลาปฏิบัติงานก่อนส่งเบิกตามขั้นตอนเดิม</p>
+    <div class="monthly-signatures"><div>ลงชื่อ....................................................<br>(${monthlySafe(first.studentName)})<br>ผู้ปฏิบัติงาน</div><div>ลงชื่อ....................................................<br>(....................................................)<br>ผู้รับรองการปฏิบัติงาน</div></div>`;
+  document.body.classList.add('print-mode-monthly-application');
+  const cleanup=()=>{ document.body.classList.remove('print-mode-monthly-application'); window.removeEventListener('afterprint',cleanup); };
+  window.addEventListener('afterprint',cleanup);
+  try { window.print(); } finally { setTimeout(cleanup,2000); }
 }
