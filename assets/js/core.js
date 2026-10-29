@@ -1143,7 +1143,7 @@ function loadStudentMonthlyJobs() {
           const [y,m] = month.split('-').map(Number), data=grouped[month]||[];
           const claim=studentMonthlyClaimStatusCache[month];
           const label = `${monthlyThaiMonths[m-1]} ${y+543}`;
-          const statusHtml = claim ? '<strong style="color:#166534">✓ ยืนยันแบบเบิกแล้ว (รอเจ้าหน้าที่ตรวจสอบ)</strong>' : '<span style="color:#64748b">ยังไม่ได้ยืนยันแบบเบิก</span>';
+          const statusHtml = claim ? '<strong style="color:#166534">✓ ยืนยันแบบเบิกแล้ว</strong>' : '<span style="color:#64748b">ยังไม่ได้ยืนยันแบบเบิก</span>';
           const actionHtml = claim
             ? `<button type="button" class="btn btn-info monthly-reprint-btn" data-month="${month}">พิมพ์แบบเบิกที่ยืนยันแล้ว</button>`
             : `<button type="button" class="btn btn-info monthly-print-btn" data-month="${month}">ยืนยันวันที่และช่วงเวลาที่เข้าทำงาน</button>`;
@@ -1198,8 +1198,8 @@ function showMonthlyClaimConfirm(month) {
     google.script.run.withSuccessHandler(res=>{
       hideLoading();
       if(!res||!res.success) return showAlert(res&&res.message||'บันทึกไม่สำเร็จ','error');
-      studentMonthlyClaimStatusCache[month]={claimId:res.claimId,registrationIds:ids,status:'รอตรวจสอบ'};
-      Swal.fire({icon:'success',title:'ยืนยันแบบเบิกแล้ว',text:'บันทึกวันที่และช่วงเวลาที่เข้าทำงานจริงเรียบร้อยแล้ว สถานะรอเจ้าหน้าที่ตรวจสอบ',confirmButtonText:'พิมพ์แบบเบิก'}).then(()=>{
+      studentMonthlyClaimStatusCache[month]={claimId:res.claimId,registrationIds:ids,status:'ยืนยันแบบเบิกแล้ว'};
+      Swal.fire({icon:'success',title:'ยืนยันแบบเบิกแล้ว',text:'บันทึกวันที่และช่วงเวลาที่เข้าทำงานจริงและยืนยันแบบเบิกเรียบร้อยแล้ว',confirmButtonText:'พิมพ์แบบเบิก'}).then(()=>{
         printStudentJobMonth(month,null,ids);
         loadStudentMonthlyJobs();
       });
