@@ -1177,27 +1177,26 @@ function printStudentJobMonth(month) {
     total += dailyPay;
     return dayItems.map((item, index) => {
       const [start, end] = monthlyJobSlot(item.slot);
-      const dateCell = index === 0 ? `<td rowspan="${dayItems.length}">${monthlySafe(date)}</td>` : '';
+      const centeredCell = 'style="text-align:center !important;vertical-align:middle !important;padding:4px 2px;"';
+      const dateCell = index === 0 ? `<td rowspan="${dayItems.length}" ${centeredCell}>${monthlySafe(date)}</td>` : '';
       const payCells = index === 0
-        ? `<td rowspan="${dayItems.length}">${monthlySafe(String(Number(dailyHours.toFixed(2))))}</td><td rowspan="${dayItems.length}">${dailyPay.toLocaleString('th-TH')}</td>` : '';
+        ? `<td rowspan="${dayItems.length}" ${centeredCell}>${monthlySafe(String(Number(dailyHours.toFixed(2))))}</td><td rowspan="${dayItems.length}" ${centeredCell}>${dailyPay.toLocaleString('th-TH')}</td>` : '';
       const jobTitle = String(item.title || '-');
       const detail = agencies.length > 1 ? `${jobTitle} (${item.agency || '-'})` : jobTitle;
       // คอลัมน์เหมือน Timekeeping: ลำดับ | วันที่ | มา | กลับ | ชม. | บาท | รายละเอียด | ลายมือชื่อ
-      return `<tr><td>${++serial}</td>${dateCell}<td>${monthlySafe(start)}</td><td>${monthlySafe(end)}</td>${payCells}<td style="text-align:left;padding-left:5px">${monthlySafe(detail)}</td><td></td></tr>`;
+      return `<tr><td ${centeredCell}>${++serial}</td>${dateCell}<td ${centeredCell}>${monthlySafe(start)}</td><td ${centeredCell}>${monthlySafe(end)}</td>${payCells}<td style="text-align:left;padding-left:5px;vertical-align:middle">${monthlySafe(detail)}</td><td ${centeredCell}></td></tr>`;
     }).join('');
   }).join('');
   const tbody = report.querySelector('#printTableBody');
   if (!tbody) return showAlert('แบบฟอร์มไม่พบตารางลงเวลา', 'error');
   tbody.innerHTML = rows;
+  // จัดหัวคอลัมน์และค่าของวัน เวลา ชั่วโมง เงิน ให้อยู่กลางช่องทั้งบนหน้าจอและตอนพิมพ์
+  report.querySelectorAll('.report-table thead th').forEach(th => {
+    th.style.setProperty('text-align', 'center', 'important');
+    th.style.setProperty('vertical-align', 'middle', 'important');
+  });
   fill('printTotalAmount', total.toLocaleString('th-TH'));
   fill('printTotalAmountText', typeof BAHTTEXT === 'function' ? BAHTTEXT(total) : '');
-  // แยกเอกสารรายการสมัครออกจากเอกสารบันทึกเวลาจริงด้วยหมายเหตุที่ชัดเจน
-  const note = document.createElement('p');
-  note.className = 'monthly-document-note';
-  note.style.cssText = 'font-size:11px;margin:9px 0 0;line-height:1.4;';
-  note.textContent = 'หมายเหตุ: เอกสารนี้สรุปรายการงานที่สมัคร/ได้รับเข้าทำงานตามประกาศในเดือนที่เลือก จำนวนชั่วโมงและค่าตอบแทนเป็นประมาณการตามช่วงเวลาประกาศ ไม่ใช่ข้อมูลการลงเวลาจริงหรือหลักฐานอนุมัติเบิกจ่าย การลงเวลาและการเบิกจ่ายยังดำเนินการในระบบ Timekeeping แยกต่างหาก';
-  const table = report.querySelector('.report-table');
-  if (table) table.insertAdjacentElement('afterend', note);
   report.querySelectorAll('[id]').forEach(el => el.removeAttribute('id'));
   report.classList.add('paper-sheet');
   document.body.classList.add('print-mode-monthly-application');
