@@ -3042,9 +3042,9 @@
  body.print-mode-monthly-application * { visibility:hidden !important; }
  body.print-mode-monthly-application #monthlyApplicationPrint, body.print-mode-monthly-application #monthlyApplicationPrint * {visibility:visible !important;}
  body.print-mode-monthly-application #monthlyApplicationPrint {display:block !important;position:absolute !important;top:0;left:0;width:100%;background:#fff !important;padding:0 8px;box-sizing:border-box;font-family:'Sarabun',sans-serif;font-size:11px;color:#000;}
- body.print-mode-monthly-application #monthlyApplicationPrint .monthly-print-table {width:100%;border-collapse:collapse;font-size:10px;table-layout:fixed;}
- body.print-mode-monthly-application #monthlyApplicationPrint .monthly-print-table th, body.print-mode-monthly-application #monthlyApplicationPrint .monthly-print-table td {border:1px solid black;padding:3px;overflow-wrap:anywhere;}
+ body.print-mode-monthly-application #monthlyApplicationPrint .monthly-print-table {width:100%;border-collapse:collapse;font-size:9px;table-layout:fixed;}
+ body.print-mode-monthly-application #monthlyApplicationPrint .monthly-print-table th, body.print-mode-monthly-application #monthlyApplicationPrint .monthly-print-table td {border:1px solid black;padding:2px;overflow-wrap:anywhere;word-break:normal;}
  body.print-mode-monthly-application #monthlyApplicationPrint .monthly-signatures {display:flex;justify-content:space-between;margin-top:20px;text-align:center;gap:15px;}
  body.print-mode-monthly-application #monthlyApplicationPrint tr {break-inside:avoid;}
- @page {size:A4 landscape;margin:8mm;}
+ @page {size:A4 portrait;margin:10mm;}
 }
