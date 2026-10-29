@@ -1277,6 +1277,14 @@ function printStudentJobMonth(month, chosenDays, chosenRegistrationIds) {
   report.classList.add('paper-sheet');
   // พื้นที่นี้เดิมมี inline display:none: ต้องทำให้เบราว์เซอร์ layout ได้ก่อน print preview
   // ซ่อนไว้นอกจอขณะดูหน้าเว็บ; กฎ @media print จะย้ายกลับมายังหน้ากระดาษ A4
+  // Move the printable report directly under <body> so hidden .section/modal ancestors cannot blank the preview.
+  const originalParent = report.parentNode;
+  const originalNextSibling = report.nextSibling;
+  if (originalParent && report.parentNode !== document.body) document.body.appendChild(report);
+  const printStyle = document.createElement('style');
+  printStyle.setAttribute('data-monthly-claim-print', 'true');
+  printStyle.textContent = '\n/* Monthly application claim print: guaranteed visible print root. */\n@media print {\n  @page { size: A4 portrait; margin: 10mm; }\n  body.print-mode-monthly-application > #monthlyApplicationPrint,\n  body.print-mode-monthly-application > #monthlyApplicationPrint * {\n    visibility: visible !important;\n  }\n  body.print-mode-monthly-application > #monthlyApplicationPrint {\n    display: block !important;\n    position: relative !important;\n    inset: auto !important;\n    left: auto !important;\n    top: auto !important;\n    width: 100% !important;\n    max-width: none !important;\n    margin: 0 !important;\n    padding: 0 !important;\n    background: #fff !important;\n    box-shadow: none !important;\n    border: 0 !important;\n    overflow: visible !important;\n    transform: none !important;\n  }\n  body.print-mode-monthly-application > #monthlyApplicationPrint .report-table {\n    border-collapse: collapse !important;\n    width: 100% !important;\n  }\n  body.print-mode-monthly-application > #monthlyApplicationPrint .report-table th,\n  body.print-mode-monthly-application > #monthlyApplicationPrint .report-table td {\n    border: 1px solid #000 !important;\n  }\n}\n';
+  document.head.appendChild(printStyle);
   const previousStyle = report.getAttribute('style');
   report.style.setProperty('display', 'block', 'important');
   report.style.setProperty('position', 'fixed');
@@ -1294,6 +1302,11 @@ function printStudentJobMonth(month, chosenDays, chosenRegistrationIds) {
     if (previousStyle === null) report.removeAttribute('style');
     else report.setAttribute('style', previousStyle);
     report.innerHTML = '';
+    printStyle.remove();
+    if (originalParent) {
+      if (originalNextSibling && originalNextSibling.parentNode === originalParent) originalParent.insertBefore(report, originalNextSibling);
+      else originalParent.appendChild(report);
+    }
     window.removeEventListener('afterprint', cleanup);
   };
   window.addEventListener('afterprint', cleanup);
