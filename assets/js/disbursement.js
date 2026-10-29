@@ -289,6 +289,18 @@ inputOptions: {
     });
 }
 
+function switchStudentFinanceTab(tab) {
+    const claims = tab === 'claims';
+    const claimPanel = document.getElementById('financeClaimTabPanel');
+    const payrollPanel = document.getElementById('financePayrollTabPanel');
+    const claimButton = document.getElementById('financeClaimTabButton');
+    const payrollButton = document.getElementById('financePayrollTabButton');
+    if (claimPanel) claimPanel.style.display = claims ? 'block' : 'none';
+    if (payrollPanel) payrollPanel.style.display = claims ? 'none' : 'block';
+    if (claimButton) { claimButton.className = 'btn ' + (claims ? 'btn-primary' : 'btn-secondary'); claimButton.setAttribute('aria-selected', String(claims)); }
+    if (payrollButton) { payrollButton.className = 'btn ' + (claims ? 'btn-secondary' : 'btn-primary'); payrollButton.setAttribute('aria-selected', String(!claims)); }
+}
+
 function loadStudentFinance() {
     showLoading();
     google.script.run.withSuccessHandler(res => {
@@ -303,39 +315,39 @@ function loadStudentFinance() {
         const container = document.getElementById('studentPayContainer');
         container.innerHTML = '';
 
-        // Claims are separate from paid transactions. Do not add them to the totals.
+        // ประวัติแบบเบิกแยกจาก Timekeeping/Payroll โดยสิ้นเชิง
         const claimItems = Array.isArray(res.claimHistory) ? res.claimHistory : [];
-        if (claimItems.length) {
-            const escapeClaimText = value => String(value == null ? '' : value)
-                .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-                .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-            const claimSection = document.createElement('section');
-            claimSection.className = 'student-claim-history';
-            claimSection.style.cssText = 'margin-bottom:20px;padding:16px;border:1px solid #dbe4ee;border-radius:10px;background:#f8fbff;';
-            const monthsThai = ['มกราคม','กุมภาพันธ์','มีนาคม','เมษายน','พฤษภาคม','มิถุนายน',
-                'กรกฎาคม','สิงหาคม','กันยายน','ตุลาคม','พฤศจิกายน','ธันวาคม'];
-            const entries = claimItems.map(item => {
-                const parts = String(item.month || '').split('-');
-                const year = Number(parts[0]);
-                const mi = Number(parts[1]) - 1;
-                const monthText = mi >= 0 && mi < 12 && year > 1900
-                    ? monthsThai[mi] + ' ' + (year > 2400 ? year : year + 543)
-                    : String(item.month || '-');
-                return `<tr><td style="padding:9px;border-bottom:1px solid #ddd">${escapeClaimText(monthText)}</td>` +
-                    `<td style="padding:9px;border-bottom:1px solid #ddd;text-align:center">${Number(item.count) || 0} รายการ</td>` +
-                    `<td style="padding:9px;border-bottom:1px solid #ddd">${escapeClaimText(item.status || 'ยืนยันแบบเบิกแล้ว')}</td></tr>`;
-            }).join('');
-            claimSection.innerHTML = '<h3 style="margin:0 0 8px">ประวัติแบบเบิกจากงานที่สมัคร</h3>' +
-                '<p style="font-size:13px;color:#555;margin:0 0 10px">รายการที่นักศึกษายืนยันแล้ว (ยังไม่ใช่รายการโอนเงินสำเร็จ และไม่รวมในยอดรับเงิน)</p>' +
-                '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse">' +
-                '<thead><tr><th style="text-align:left;padding:9px">เดือนที่ทำงาน</th>' +
-                '<th style="padding:9px">รายการที่ยืนยัน</th><th style="text-align:left;padding:9px">สถานะแบบเบิก</th></tr></thead>' +
-                '<tbody>' + entries + '</tbody></table></div>';
-            container.appendChild(claimSection);
-        }
+        const claimContainer = document.getElementById('studentClaimHistoryContainer');
+        const noClaims = document.getElementById('noStudentClaimHistory');
+        if (claimContainer) claimContainer.innerHTML = '';
+        const escapeClaimText = value => String(value == null ? '' : value)
+            .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+        const monthsThai = ['มกราคม','กุมภาพันธ์','มีนาคม','เมษายน','พฤษภาคม','มิถุนายน',
+            'กรกฎาคม','สิงหาคม','กันยายน','ตุลาคม','พฤศจิกายน','ธันวาคม'];
+        const validClaims = claimItems.filter(item => Number(item.count) > 0);
+        if (noClaims) noClaims.style.display = validClaims.length ? 'none' : 'block';
+        validClaims.forEach(item => {
+            if (!claimContainer) return;
+            const parts = String(item.month || '').split('-');
+            const year = Number(parts[0]);
+            const mi = Number(parts[1]) - 1;
+            const monthText = mi >= 0 && mi < 12 && year > 1900
+                ? monthsThai[mi] + ' ' + (year > 2400 ? year : year + 543)
+                : String(item.month || '-');
+            const card = document.createElement('div');
+            card.className = 'card';
+            card.style.cssText = 'border:1px solid #dbe4ee;border-radius:12px;margin-bottom:12px;padding:16px;background:#fff;';
+            card.innerHTML = '<div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">' +
+                '<div><strong>' + escapeClaimText(monthText) + '</strong>' +
+                '<div style="font-size:13px;color:#64748b;margin-top:4px">' + (Number(item.count) || 0) + ' รายการที่ยืนยัน</div></div>' +
+                '<span style="color:#15803d;font-weight:600">' + escapeClaimText(item.status || 'ยืนยันแบบเบิกแล้ว') + '</span>' +
+                '</div>';
+            claimContainer.appendChild(card);
+        });
 
         if (!res.history || res.history.length === 0) {
-            document.getElementById('noStudentPayHistory').style.display = claimItems.length ? 'none' : 'block';
+            document.getElementById('noStudentPayHistory').style.display = 'block';
             return;
         }
         document.getElementById('noStudentPayHistory').style.display = 'none';
