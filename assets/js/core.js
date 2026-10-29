@@ -37,7 +37,6 @@ const WELFARE_GROUP_NAME = "งานสวัสดิการนักศึ�
         "งานอำนวยการ",
         "งานศิษย์เก่าสัมพันธ์",
         "งานพัฒนานักศึกษา",
-        "กองพัฒนานักศึกษา",
         "งานกีฬาและนันทนาการ",
         "งานวินัยและสวัสดิภาพนักศึกษา",
         "งบสำรอง",
@@ -646,7 +645,7 @@ function loadUserRegistrations() {
             hideLoading();
             jobs = data;
             renderJobs(jobs);
-        }).getAllActivities();
+        }).getVisibleActivities(sessionStorage.getItem('sessionToken'));
     }
 
 function renderJobs(jobData) {
@@ -904,6 +903,7 @@ function loadJobsForAdmin() {
                     document.getElementById('jobTitle').value = job.jobTitle || '';
                     document.getElementById('jobAgency').value = job.jobAgency || '';
                     document.getElementById('jobDescription').value = job.jobDescription || '';
+                    document.getElementById('jobVisibilityType').value = job.visibilityType || 'all';
                     document.getElementById('jobDate').value = job.date.slice(0,10);
                     document.getElementById('jobTotalQuota').value = job.totalQuota;
                     document.getElementById('jobMorningQuota').value = job.morningQuota;
@@ -944,11 +944,12 @@ function loadJobsForAdmin() {
                 actions.appendChild(deleteBtn);
             });
             } else document.getElementById('noJobsAdmin').style.display = 'block';
-        }).getAllActivities();
+        }).getAllActivities(sessionStorage.getItem('sessionToken'));
     }
 
     document.getElementById('addJobBtn').onclick = () => { 
-        document.getElementById('jobForm').reset(); 
+        document.getElementById('jobForm').reset();
+        document.getElementById('jobVisibilityType').value = 'all'; 
         document.getElementById('jobId').value = ''; 
         document.getElementById('jobModalTitle').textContent = 'สร้างประกาศรับสมัครงานใหม่';
         
@@ -1011,6 +1012,7 @@ document.getElementById('jobForm').onsubmit = (e) => {
         eveningQuota: evening,
         jobTitle: document.getElementById('jobTitle').value,
         jobAgency: document.getElementById('jobAgency').value,
+        visibilityType: document.getElementById('jobVisibilityType').value,
         jobDescription: document.getElementById('jobDescription').value
     };
 
