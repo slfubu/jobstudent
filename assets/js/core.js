@@ -1139,17 +1139,34 @@ function printStudentJobMonth(month) {
   const [year,number] = month.split('-').map(Number);
   const report = document.getElementById('monthlyApplicationPrint');
   if (!report) return showAlert('ไม่พบพื้นที่พิมพ์เอกสาร กรุณาติดตั้งไฟล์หน้าเว็บให้ครบ','error');
-  const agencies = [...new Set(items.map(i=>i.agency))];
   const first = items[0];
-  report.innerHTML = `<h3 style="text-align:center;margin:0 0 12px">แบบลงเวลาและบันทึกภาระจ้างงานระหว่างเรียน มหาวิทยาลัยอุบลราชธานี</h3>
-    <p>ประจำเดือน: <b>${monthlyThaiMonths[number-1]} ${year+543}</b> &nbsp; หน่วยงาน: ${monthlySafe(agencies.join(', '))}</p>
-    <p>ชื่อ-สกุล: ${monthlySafe(first.studentName)} &nbsp; รหัสนักศึกษา: ${monthlySafe(first.studentId)} &nbsp; คณะ: ${monthlySafe(first.faculty)}</p>
-    <table class="monthly-print-table"><thead><tr><th>ลำดับ</th><th>วันที่</th><th>เวลามา</th><th>เวลากลับ</th><th>ชั่วโมงตามประกาศ</th><th>รายละเอียดงาน</th><th>หน่วยงาน</th><th>ลงชื่อ</th></tr></thead><tbody>
-    ${items.map((item,i)=>{const slot=monthlyJobSlot(item.slot);const date=item.dateKey.split('-'); return `<tr><td>${i+1}</td><td>${date[2]}/${date[1]}/${Number(date[0])+543}</td><td>${slot[0]}</td><td>${slot[1]}</td><td>${slot[2]}</td><td>${monthlySafe(item.title)}</td><td>${monthlySafe(item.agency)}</td><td></td></tr>`;}).join('')}</tbody></table>
-    <p style="font-size:12px">หมายเหตุ: เอกสารนี้จัดทำจากรายการสมัครงานที่ได้รับเข้าทำงาน ไม่ใช่หลักฐานยืนยันว่าได้ปฏิบัติงานจริง ไม่ใช่ใบอนุมัติหรือหลักฐานเบิกจ่าย กรุณาตรวจสอบและบันทึกเวลาจริงในเมนูระบบลงเวลาปฏิบัติงานก่อนส่งเบิกตามขั้นตอนเดิม</p>
-    <div class="monthly-signatures"><div>ลงชื่อ....................................................<br>(${monthlySafe(first.studentName)})<br>ผู้ปฏิบัติงาน</div><div>ลงชื่อ....................................................<br>(....................................................)<br>ผู้รับรองการปฏิบัติงาน</div></div>`;
+  const agencies = [...new Set(items.map(i=>String(i.agency || '-').trim()))];
+  const agencyText = agencies.length === 1 ? agencies[0] : agencies.join(' / ');
+  const monthLabel = `${monthlyThaiMonths[number-1]} ${year+543}`;
+  const rows = items.map((item,i)=>{
+    const slot=monthlyJobSlot(item.slot);
+    const date=item.dateKey.split('-');
+    const displayDate=`${Number(date[2])}/${Number(date[1])}/${Number(date[0])+543}`;
+    const details = `${item.title || '-'}${agencies.length > 1 ? ' (' + (item.agency || '-') + ')' : ''}`;
+    // ชั่วโมงตามประกาศไม่ใช่ชั่วโมงปฏิบัติงานจริง จึงไม่คำนวณค่าตอบแทน
+    return `<tr><td>${i+1}</td><td>${displayDate}</td><td>${monthlySafe(slot[0])}</td><td>${monthlySafe(slot[1])}</td><td>${monthlySafe(slot[2])}</td><td class="monthly-detail">${monthlySafe(details)}</td><td>—</td><td class="monthly-sign-col"></td></tr>`;
+  }).join('');
+  report.innerHTML = `
+    <div class="monthly-form-header"><h3>แบบลงเวลาและบันทึกภาระจ้างงานระหว่างเรียน มหาวิทยาลัยอุบลราชธานี</h3></div>
+    <div class="monthly-form-info">
+      <div class="monthly-info-line"><span><b>หน่วยงาน :</b> ${monthlySafe(agencyText)}</span><span><b>ประจำเดือน :</b> ${monthlySafe(monthLabel)}</span></div>
+      <div class="monthly-info-line"><span><b>ชื่อ-สกุล :</b> ${monthlySafe(first.studentName)}</span><span><b>รหัสนักศึกษา :</b> ${monthlySafe(first.studentId)}</span><span><b>คณะ :</b> ${monthlySafe(first.faculty)}</span></div>
+    </div>
+    <table class="monthly-print-table report-table">
+      <thead><tr><th style="width:5%">ลำดับ</th><th style="width:12%">วัน/เดือน/ปี</th><th style="width:9%">เวลามา</th><th style="width:9%">เวลากลับ</th><th style="width:10%">จำนวน (ชม.)*</th><th style="width:14%">ค่าตอบแทน (บาท)</th><th>รายละเอียด</th><th style="width:13%">ลายมือชื่อ</th></tr></thead>
+      <tbody>${rows}</tbody>
+      <tfoot><tr><td colspan="5" class="monthly-total-label">รวมเป็นเงินทั้งสิ้น</td><td class="monthly-total-value">—</td><td colspan="2" class="monthly-total-note">รอตรวจสอบการปฏิบัติงานจริง</td></tr></tfoot>
+    </table>
+    <div class="monthly-rate-note"><b>อัตราค่าตอบแทน</b><div>1) ปฏิบัติงาน 3.5 ชม. ค่าตอบแทน 150 บาท</div><div>2) ปฏิบัติงาน 7 ชม. ค่าตอบแทน 300 บาท (ไม่รวมเวลาหยุดพัก 12.00–13.00 น.)</div></div>
+    <div class="monthly-document-note">*เวลาที่แสดงอ้างอิงช่วงเวลาตามประกาศงาน ยังไม่ใช่การรับรองชั่วโมงปฏิบัติงานจริง เอกสารนี้เป็นสรุปรายการสมัครงานรายเดือน ไม่ใช้เป็นหลักฐานเบิกจ่ายจนกว่าจะบันทึกเวลาจริงและผ่านขั้นตอนรับรองในระบบลงเวลาปฏิบัติงาน</div>
+    <div class="monthly-signatures"><div><div class="monthly-sign-space"></div>ลงชื่อ..........................................................<div>(${monthlySafe(first.studentName)})</div><div>ผู้ปฏิบัติงาน</div></div><div><div class="monthly-sign-space"></div>ลงชื่อ..........................................................<div>(..........................................................)</div><div>ตำแหน่ง ..........................................................</div><div>ผู้รับรองการปฏิบัติงาน</div></div></div>`;
   document.body.classList.add('print-mode-monthly-application');
-  const cleanup=()=>{ document.body.classList.remove('print-mode-monthly-application'); window.removeEventListener('afterprint',cleanup); };
+  const cleanup=()=>{document.body.classList.remove('print-mode-monthly-application');window.removeEventListener('afterprint',cleanup);};
   window.addEventListener('afterprint',cleanup);
-  try { window.print(); } finally { setTimeout(cleanup,2000); }
+  try {window.print();} finally {setTimeout(cleanup,2000);}
 }
