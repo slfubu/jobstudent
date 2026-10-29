@@ -1158,7 +1158,15 @@ function loadStudentMonthlyJobs() {
       wrap.querySelectorAll('.monthly-reprint-btn').forEach(btn => btn.addEventListener('click',()=>{
         const month=btn.dataset.month, claim=studentMonthlyClaimStatusCache[month];
         if (!claim) return;
-        printStudentJobMonth(month,null,claim.registrationIds);
+        // ดึงรายการจากแบบเบิกที่บันทึกจริง ไม่พึ่ง cache ของงานที่ยัง active
+        google.script.run.withSuccessHandler(result => {
+          if (!result || !result.success) return showAlert((result && result.message) || 'โหลดแบบเบิกไม่สำเร็จ', 'error');
+          const items = (result.items || []).map(item => ({ ...item, dateKey: monthlyDateKey(item.date) }));
+          if (!items.length) return showAlert('แบบเบิกที่ยืนยันไม่มีรายการให้พิมพ์ กรุณาติดต่อเจ้าหน้าที่', 'warning');
+          studentMonthlyJobCache[month] = items;
+          printStudentJobMonth(month, null, claim.registrationIds);
+        }).withFailureHandler(err => showAlert('ดึงรายการแบบเบิกไม่ได้: ' + (err.message || err), 'error'))
+          .getMyConfirmedClaimPrintItems(sessionStorage.getItem('sessionToken'), month);
       }));
     }).withFailureHandler(err=>{wrap.textContent='โหลดงานไม่ได้: '+(err.message||err);})
       .getMyMonthlyJobApplications(token);
