@@ -1201,7 +1201,8 @@ function showMonthlyClaimConfirm(month) {
       studentMonthlyClaimStatusCache[month]={claimId:res.claimId,registrationIds:ids,status:'ยืนยันแบบเบิกแล้ว'};
       Swal.fire({icon:'success',title:'ยืนยันแบบเบิกแล้ว',text:'บันทึกวันที่และช่วงเวลาที่เข้าทำงานจริงและยืนยันแบบเบิกเรียบร้อยแล้ว',confirmButtonText:'พิมพ์แบบเบิก'}).then(()=>{
         printStudentJobMonth(month,null,ids);
-        loadStudentMonthlyJobs();
+        // โหลดสถานะใหม่หลังหน้าตัวอย่างพิมพ์ปิด ไม่แทรกระหว่างสร้างหน้าพิมพ์
+        window.addEventListener('afterprint', () => loadStudentMonthlyJobs(), { once: true });
       });
     }).withFailureHandler(err=>{hideLoading();showAlert(err.message||String(err),'error');})
       .saveMyMonthlyClaimDraft(sessionStorage.getItem('sessionToken'),month,ids);
@@ -1274,14 +1275,44 @@ function printStudentJobMonth(month, chosenDays, chosenRegistrationIds) {
   fill('printTotalAmountText', typeof BAHTTEXT === 'function' ? BAHTTEXT(total) : '');
   report.querySelectorAll('[id]').forEach(el => el.removeAttribute('id'));
   report.classList.add('paper-sheet');
+  // พื้นที่นี้เดิมมี inline display:none: ต้องทำให้เบราว์เซอร์ layout ได้ก่อน print preview
+  // ซ่อนไว้นอกจอขณะดูหน้าเว็บ; กฎ @media print จะย้ายกลับมายังหน้ากระดาษ A4
+  const previousStyle = report.getAttribute('style');
+  report.style.setProperty('display', 'block', 'important');
+  report.style.setProperty('position', 'fixed');
+  report.style.setProperty('left', '-10000px');
+  report.style.setProperty('top', '0');
+  report.style.setProperty('width', '190mm');
+  report.style.setProperty('background', '#fff');
   document.body.classList.add('print-mode-monthly-application');
+  let finished = false;
   const cleanup = () => {
+    if (finished) return;
+    finished = true;
     document.body.classList.remove('print-mode-monthly-application');
     report.classList.remove('paper-sheet');
+    if (previousStyle === null) report.removeAttribute('style');
+    else report.setAttribute('style', previousStyle);
     report.innerHTML = '';
     window.removeEventListener('afterprint', cleanup);
   };
   window.addEventListener('afterprint', cleanup);
-  // ให้เบราว์เซอร์เรนเดอร์เอกสารก่อนเรียกหน้าพิมพ์
-  setTimeout(() => { try { window.print(); } catch (err) { cleanup(); showAlert('ไม่สามารถเปิดหน้าพิมพ์ได้', 'error'); } }, 80);
+  // รออย่างน้อย 2 รอบการวาดหน้า และให้ฟอนต์พร้อมก่อนเปิดตัวอย่างพิมพ์
+  const nextFrame = () => new Promise(resolve => requestAnimationFrame(resolve));
+  (async () => {
+    try {
+      if (document.fonts && document.fonts.ready) {
+        await Promise.race([document.fonts.ready, new Promise(resolve => setTimeout(resolve, 1500))]);
+      }
+      await nextFrame();
+      await nextFrame();
+      // บังคับอ่าน layout เพื่อให้ตารางและข้อความได้รับการจัดหน้าก่อนพิมพ์
+      void report.offsetHeight;
+      if (finished) return;
+      window.print();
+    } catch (err) {
+      cleanup();
+      showAlert('ไม่สามารถเปิดหน้าพิมพ์ได้: ' + (err && err.message || err), 'error');
+    }
+  })();
 }
