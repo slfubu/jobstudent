@@ -1091,6 +1091,7 @@ function renderFiscalRenewalButton_() {
 
 /* ===== Monthly printable job summary: student dashboard only ===== */
 let studentMonthlyJobCache = {};
+let studentMonthlyClaimStatusCache = {};
 const monthlyThaiMonths = ['มกราคม','กุมภาพันธ์','มีนาคม','เมษายน','พฤษภาคม','มิถุนายน','กรกฎาคม','สิงหาคม','กันยายน','ตุลาคม','พฤศจิกายน','ธันวาคม'];
 function monthlySafe(v) { return String(v == null ? '' : v).replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch])); }
 function monthlyDateKey(v) {
@@ -1107,61 +1108,89 @@ function monthlyJobSlot(slot) {
 function loadStudentMonthlyJobs() {
   const wrap = document.getElementById('studentMonthlyJobList');
   if (!wrap || !currentUser || String(currentUser.role).toLowerCase() !== 'user') return;
-  wrap.textContent = 'กำลังโหลดรายการแยกเดือน...';
-  google.script.run.withSuccessHandler(res => {
-    if (!res || !res.success) { wrap.textContent = res && res.message || 'ไม่สามารถโหลดข้อมูลได้'; return; }
-    const grouped = {};
-    let skipped = 0;
-    (res.items || []).forEach(item => {
-      const day = monthlyDateKey(item.date);
-      if (!day) { skipped++; return; }
-      const month = day.slice(0,7);
-      (grouped[month] ||= []).push({...item, dateKey:day});
-    });
-    studentMonthlyJobCache = grouped;
-    const months = Object.keys(grouped).sort().reverse();
-    wrap.innerHTML = (skipped ? `<p style="color:#b45309">มี ${skipped} รายการที่อ่านวันที่ไม่ได้ กรุณาติดต่อเจ้าหน้าที่</p>` : '') +
-      (months.length ? months.map(month => {
-        const [y,m] = month.split('-').map(Number), data=grouped[month];
-        const label = `${monthlyThaiMonths[m-1]} ${y+543}`;
-        return `<details class="monthly-job-group" style="margin:10px 0;border:1px solid #ddd;border-radius:8px;padding:12px">
-          <summary style="cursor:pointer;font-weight:600">${label} — ${data.length} รายการ</summary>
-          <div style="padding:10px 0;overflow-x:auto"><table class="clean-table" style="width:100%"><thead><tr><th>วันที่</th><th>งาน</th><th>หน่วยงาน</th><th>ช่วงเวลา</th></tr></thead><tbody>
-          ${data.map(row=>`<tr><td>${monthlySafe(row.dateKey)}</td><td>${monthlySafe(row.title)}</td><td>${monthlySafe(row.agency)}</td><td>${monthlySafe(row.slot)}</td></tr>`).join('')}</tbody></table></div>
-          <button type="button" class="btn btn-info monthly-print-btn" data-month="${month}">สร้างแบบเบิกเงิน</button>
-        </details>`;
-      }).join('') : '<p>ยังไม่มีรายการรับเข้าทำงานที่แสดงรายเดือนได้</p>');
-    wrap.querySelectorAll('.monthly-print-btn').forEach(btn => btn.addEventListener('click', ()=>showMonthlyClaimConfirm(btn.dataset.month)));
-  }).withFailureHandler(err => { wrap.textContent = 'โหลดรายการไม่ได้: '+(err.message||err); })
-    .getMyMonthlyJobApplications(sessionStorage.getItem('sessionToken'));
+  wrap.textContent = 'กำลังโหลดรายการและสถานะแบบเบิก...';
+  const token = sessionStorage.getItem('sessionToken');
+  // อ่านสถานะจากเซิร์ฟเวอร์ทุกครั้ง เพื่อไม่เปิดให้สร้างแบบเบิกซ้ำ
+  google.script.run.withSuccessHandler(statusRes => {
+    if (!statusRes || !statusRes.success) { wrap.textContent = (statusRes && statusRes.message) || 'ตรวจสอบสถานะแบบเบิกไม่ได้'; return; }
+    studentMonthlyClaimStatusCache = statusRes.claims || {};
+    google.script.run.withSuccessHandler(res => {
+      if (!res || !res.success) { wrap.textContent = (res && res.message) || 'โหลดงานไม่ได้'; return; }
+      const grouped = {};
+      let skipped = 0;
+      (res.items || []).forEach(item => {
+        const day = monthlyDateKey(item.date);
+        if (!day) { skipped++; return; }
+        (grouped[day.slice(0,7)] ||= []).push({...item,dateKey:day});
+      });
+      studentMonthlyJobCache = grouped;
+      const months = [...new Set([...Object.keys(grouped), ...Object.keys(studentMonthlyClaimStatusCache)])].sort().reverse();
+      wrap.innerHTML = (skipped ? `<p style="color:#b45309">มี ${skipped} รายการที่อ่านวันที่ไม่ได้ กรุณาติดต่อเจ้าหน้าที่</p>` : '')+
+        (months.length ? months.map(month => {
+          const [y,m] = month.split('-').map(Number), data=grouped[month]||[];
+          const claim=studentMonthlyClaimStatusCache[month];
+          const label = `${monthlyThaiMonths[m-1]} ${y+543}`;
+          const statusHtml = claim ? '<strong style="color:#166534">✓ ยืนยันแบบเบิกแล้ว (รอเจ้าหน้าที่ตรวจสอบ)</strong>' : '<span style="color:#64748b">ยังไม่ได้ยืนยันแบบเบิก</span>';
+          const actionHtml = claim
+            ? `<button type="button" class="btn btn-info monthly-reprint-btn" data-month="${month}">พิมพ์แบบเบิกที่ยืนยันแล้ว</button>`
+            : `<button type="button" class="btn btn-info monthly-print-btn" data-month="${month}">ยืนยันวันที่และช่วงเวลาที่เข้าทำงาน</button>`;
+          return `<details class="monthly-job-group" style="margin:10px 0;border:1px solid #ddd;border-radius:8px;padding:12px">
+            <summary style="cursor:pointer;font-weight:600">${label} — ${data.length} งาน ${claim?'✓ ยืนยันแบบเบิกแล้ว':''}</summary>
+            <div style="margin:8px 0">${statusHtml}</div>
+            <div style="padding:10px 0;overflow-x:auto"><table class="clean-table" style="width:100%"><thead><tr><th>วันที่</th><th>งาน</th><th>หน่วยงาน</th><th>ช่วงเวลาที่สมัคร</th></tr></thead><tbody>
+            ${data.map(row=>`<tr><td>${monthlySafe(row.dateKey)}</td><td>${monthlySafe(row.title)}</td><td>${monthlySafe(row.agency)}</td><td>${monthlySafe(row.slot)}</td></tr>`).join('')}</tbody></table></div>
+            ${actionHtml}
+          </details>`;
+        }).join('') : '<p>ยังไม่มีรายการรับเข้าทำงาน</p>');
+      wrap.querySelectorAll('.monthly-print-btn').forEach(btn => btn.addEventListener('click',()=>showMonthlyClaimConfirm(btn.dataset.month)));
+      wrap.querySelectorAll('.monthly-reprint-btn').forEach(btn => btn.addEventListener('click',()=>{
+        const month=btn.dataset.month, claim=studentMonthlyClaimStatusCache[month];
+        if (!claim) return;
+        printStudentJobMonth(month,null,claim.registrationIds);
+      }));
+    }).withFailureHandler(err=>{wrap.textContent='โหลดงานไม่ได้: '+(err.message||err);})
+      .getMyMonthlyJobApplications(token);
+  }).withFailureHandler(err=>{wrap.textContent='ตรวจสอบสถานะไม่ได้: '+(err.message||err);})
+    .getMyMonthlyClaimStatuses(token);
 }
 function showMonthlyClaimConfirm(month) {
-  const rows = (studentMonthlyJobCache[month] || []).filter(x => x.id && x.dateKey);
-  if (!rows.length) return showAlert('ไม่พบรายการงานสำหรับเดือนนี้', 'warning');
-  const days = [...new Set(rows.map(x => x.dateKey))].sort();
-  const html = `<div style="text-align:left;max-height:50vh;overflow-y:auto">` +
-    `<p>เลือกเฉพาะวันที่เข้าปฏิบัติงานจริง (ยังต้องผ่านการตรวจสอบของหน่วยงาน)</p>` +
-    days.map(d => `<label style="display:block;padding:8px;border-bottom:1px solid #ddd"><input type="checkbox" class="claim-day" value="${monthlySafe(d)}" style="margin-right:9px">${monthlySafe(d)} — ${rows.filter(r=>r.dateKey===d).map(r=>monthlySafe(r.title)).join(', ')}</label>`).join('') + `</div>`;
-  Swal.fire({title:'ยืนยันวันที่ทำงานจริง',html,showCancelButton:true,confirmButtonText:'สร้างแบบเบิกเงิน',cancelButtonText:'ยกเลิก',
-    preConfirm:()=> {const selected=[...document.querySelectorAll('.swal2-popup .claim-day:checked')].map(el=>el.value);if(!selected.length){Swal.showValidationMessage('กรุณาเลือกอย่างน้อย 1 วัน');return false;}return selected;}
+  if (studentMonthlyClaimStatusCache[month]) return showAlert('ยืนยันแบบเบิกเดือนนี้แล้ว กรุณาใช้ปุ่มพิมพ์แบบเบิกที่ยืนยันแล้ว','info');
+  const rows=(studentMonthlyJobCache[month]||[]).filter(x=>x.id&&x.dateKey);
+  if (!rows.length) return showAlert('ไม่พบงานที่สมัครในเดือนนี้','warning');
+  // แยกงานตามวัน+ช่วงเวลา: ในวันเดียวกันอาจสมัครหลายงานหรือหลายช่วงเวลา
+  const html = `<div style="text-align:left;max-height:55vh;overflow-y:auto">`+
+    `<p style="margin:0 0 10px">ตรวจสอบ <b>วันและเวลาตามที่สมัคร</b> แล้วติ๊กเฉพาะช่วงที่เข้าทำงานจริง ไม่ต้องเลือกช่วงที่ขาดงาน</p>`+
+    rows.map((r,i)=>{const [start,end]=monthlyJobSlot(r.slot);
+      return `<label style="display:block;padding:10px 8px;border-bottom:1px solid #ddd;cursor:pointer"><input type="checkbox" class="claim-reg" value="${monthlySafe(String(r.id))}" style="margin-right:8px">`+
+        `<b>${monthlySafe(r.dateKey)}</b> | เวลา ${monthlySafe(start)}–${monthlySafe(end)} น. `+
+        `<div style="padding-left:26px">${monthlySafe(r.title)} (${monthlySafe(r.agency||'-')})</div></label>`;
+    }).join('')+`</div>`;
+  Swal.fire({title:'ยืนยันวันที่และเวลาที่เข้าทำงานจริง',html,width:650,showCancelButton:true,
+    confirmButtonText:'ยืนยันและสร้างแบบเบิก',cancelButtonText:'กลับ',
+    preConfirm:()=>{const selected=[...document.querySelectorAll('.swal2-popup .claim-reg:checked')].map(el=>el.value);
+      if(!selected.length){Swal.showValidationMessage('กรุณาเลือกวันที่และช่วงเวลาที่เข้าทำงานจริงอย่างน้อย 1 รายการ');return false;}
+      return [...new Set(selected)];}
   }).then(result=>{
     if (!result.isConfirmed) return;
-    const daysChosen=result.value;
-    const registrationIds=rows.filter(r=>daysChosen.includes(r.dateKey)).map(r=>String(r.id));
+    const ids=result.value;
     showLoading();
     google.script.run.withSuccessHandler(res=>{
       hideLoading();
-      if(!res || !res.success) return showAlert((res && res.message)||'บันทึกไม่สำเร็จ','error');
-      printStudentJobMonth(month, daysChosen);
+      if(!res||!res.success) return showAlert(res&&res.message||'บันทึกไม่สำเร็จ','error');
+      studentMonthlyClaimStatusCache[month]={claimId:res.claimId,registrationIds:ids,status:'รอตรวจสอบ'};
+      Swal.fire({icon:'success',title:'ยืนยันแบบเบิกแล้ว',text:'บันทึกวันที่และช่วงเวลาที่เข้าทำงานจริงเรียบร้อยแล้ว สถานะรอเจ้าหน้าที่ตรวจสอบ',confirmButtonText:'พิมพ์แบบเบิก'}).then(()=>{
+        printStudentJobMonth(month,null,ids);
+        loadStudentMonthlyJobs();
+      });
     }).withFailureHandler(err=>{hideLoading();showAlert(err.message||String(err),'error');})
-      .saveMyMonthlyClaimDraft(sessionStorage.getItem('sessionToken'),month,registrationIds);
+      .saveMyMonthlyClaimDraft(sessionStorage.getItem('sessionToken'),month,ids);
   });
 }
 
-function printStudentJobMonth(month, chosenDays) {
+function printStudentJobMonth(month, chosenDays, chosenRegistrationIds) {
   // ใบลงเวลาจากงานที่สมัคร: ข้อมูลแยกจาก Timekeeping / TimeLogs โดยเด็ดขาด
   if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(String(month))) return showAlert('เดือนที่เลือกไม่ถูกต้อง', 'error');
-  const items = (studentMonthlyJobCache[month] || []).filter(item => item.dateKey && item.dateKey.slice(0,7) === month && (!Array.isArray(chosenDays) || chosenDays.includes(item.dateKey)))
+  const items = (studentMonthlyJobCache[month] || []).filter(item => item.dateKey && item.dateKey.slice(0,7) === month && (!Array.isArray(chosenDays) || chosenDays.includes(item.dateKey)) && (!Array.isArray(chosenRegistrationIds) || chosenRegistrationIds.map(String).includes(String(item.id))))
     .slice().sort((a,b) => a.dateKey.localeCompare(b.dateKey));
   if (!items.length) return showAlert('ไม่พบงานที่รับเข้าทำงานของเดือนนี้', 'warning');
   const report = document.getElementById('monthlyApplicationPrint');
