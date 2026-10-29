@@ -1134,88 +1134,80 @@ function loadStudentMonthlyJobs() {
     .getMyMonthlyJobApplications(sessionStorage.getItem('sessionToken'));
 }
 function printStudentJobMonth(month) {
+  // ใบลงเวลาจากงานที่สมัคร: ข้อมูลแยกจาก Timekeeping / TimeLogs โดยเด็ดขาด
+  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(String(month))) return showAlert('เดือนที่เลือกไม่ถูกต้อง', 'error');
+  const items = (studentMonthlyJobCache[month] || []).filter(item => item.dateKey && item.dateKey.slice(0,7) === month)
+    .slice().sort((a,b) => a.dateKey.localeCompare(b.dateKey));
+  if (!items.length) return showAlert('ไม่พบงานที่รับเข้าทำงานของเดือนนี้', 'warning');
   const report = document.getElementById('monthlyApplicationPrint');
   const template = document.getElementById('printTimeSheetArea');
-  if (!report || !template) return showAlert('ไม่พบแบบพิมพ์ Timekeeping กรุณาตรวจสอบไฟล์หน้าเว็บ', 'error');
-  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(String(month))) return showAlert('เดือนที่เลือกไม่ถูกต้อง', 'error');
-  if (!currentUser || !currentUser.studentId) return showAlert('กรุณาเข้าสู่ระบบใหม่', 'error');
-  const token = sessionStorage.getItem('sessionToken');
-  if (!token) return showAlert('เซสชันหมดอายุ กรุณาเข้าสู่ระบบใหม่', 'error');
+  if (!report || !template) return showAlert('ไม่พบแบบฟอร์ม Timekeeping กรุณาตรวจสอบไฟล์หน้าเว็บ', 'error');
+  // ใช้หน้าตา/ลำดับคอลัมน์แบบเดียวกับ Timekeeping โดยไม่เรียก API ของ Timekeeping
+  report.innerHTML = template.innerHTML;
+  const fill = (id, value) => {
+    const el = report.querySelector('#' + id);
+    if (el) el.textContent = value == null || value === '' ? '-' : String(value);
+  };
+  const [year, nmonth] = month.split('-').map(Number);
+  const agencies = [...new Set(items.map(item => String(item.agency || '').trim()).filter(Boolean))];
+  const agencyName = agencies.map(name => typeof getTimesheetAgencyName === 'function'
+    ? getTimesheetAgencyName(name)
+    : (typeof getOfficialAgencyName === 'function' ? getOfficialAgencyName(name) : name)).join(' / ') || '-';
+  const first = items[0];
+  const fullName = first.studentName || [currentUser && currentUser.prefix || '', currentUser && currentUser.firstName || '', currentUser && currentUser.lastName || ''].join(' ').trim();
+  fill('printAgency', agencyName);
+  fill('printMonth', `${monthlyThaiMonths[nmonth - 1]} ${year + 543}`);
+  fill('printName', fullName);
+  fill('printSignName', fullName);
+  fill('printId', first.studentId || (currentUser && currentUser.studentId));
+  fill('printFaculty', first.faculty || (currentUser && currentUser.faculty));
 
-  // ใช้ข้อมูลชุดเดียวกับ Timekeeping: TimeLogs เฉพาะนักศึกษาที่เข้าสู่ระบบ
-  // API ปัจจุบันส่งเฉพาะรายการสถานะ Pending เหมือนหน้าลงเวลาปฏิบัติงาน
-  google.script.run.withSuccessHandler(function(res) {
-    if (!res || !Array.isArray(res.logs)) {
-      return showAlert((res && res.message) || 'อ่านข้อมูล Timekeeping ไม่สำเร็จ', 'error');
-    }
-    if (res.message && /Security Alert|ไม่อนุญาต|Error/i.test(res.message)) return showAlert(res.message, 'error');
-    const logs = res.logs.filter(log => monthlyDateKey(log.date)?.slice(0, 7) === month)
-      .sort((a,b) => monthlyDateKey(a.date).localeCompare(monthlyDateKey(b.date)));
-    if (!logs.length) return showAlert('ไม่พบข้อมูลลงเวลาจริงของเดือนนี้ใน Timekeeping (รายการที่ส่งเบิกแล้วอาจไม่อยู่ในสถานะ Pending)', 'warning');
-
-    // ใช้เอกสารต้นฉบับของ Timekeeping ทั้งหัวกระดาษ ตารางและส่วนลงนาม
-    report.innerHTML = template.innerHTML;
-    const fill = (id, val) => {
-      const el = report.querySelector('#' + id);
-      if (el) el.textContent = String(val == null ? '-' : val);
-    };
-    const [year, m] = month.split('-').map(Number);
-    const monthLabel = `${monthlyThaiMonths[m-1]} ${year+543}`;
-    const fullname = `${currentUser.prefix || ''}${currentUser.firstName || ''} ${currentUser.lastName || ''}`.trim();
-    const agency = typeof getTimesheetAgencyName === 'function'
-      ? getTimesheetAgencyName(currentUser.regularAgency)
-      : typeof getOfficialAgencyName === 'function'
-        ? getOfficialAgencyName(currentUser.regularAgency) : (currentUser.regularAgency || '-');
-    fill('printAgency', agency);
-    fill('printMonth', monthLabel);
-    fill('printName', fullname);
-    fill('printSignName', fullname);
-    fill('printId', currentUser.studentId);
-    fill('printFaculty', currentUser.faculty || '-');
-
-    const grouped = {};
-    logs.forEach(log => {
-      const key = monthlyDateKey(log.date);
-      (grouped[key] ||= []).push(log);
-    });
-    let index = 0, total = 0;
-    let rows = '';
-    Object.entries(grouped).forEach(([dayKey, dayLogs]) => {
-      const [yy, mm, dd] = dayKey.split('-').map(Number);
-      const dateLabel = `${dd}/${mm}/${yy+543}`;
-      const dailyHours = dayLogs.reduce((n, log) => n + (parseFloat(log.hours) || 0), 0);
-      // ใช้สูตรเดียวกับ renderTimeTable() ของ Timekeeping ไม่คำนวณจากประกาศงาน
-      const dailyAmount = dailyHours >= 7 ? 300 : dailyHours >= 3.5 ? 150
-        : dayLogs.reduce((n, log) => n + (parseInt(log.amount, 10) || 0), 0);
-      total += dailyAmount;
-      dayLogs.forEach((log, i) => {
-        const span = dayLogs.length;
-        const dateTd = i === 0 ? `<td rowspan="${span}" style="text-align:center;vertical-align:middle;border:1px solid #000">${monthlySafe(dateLabel)}</td>` : '';
-        const sumTd = i === 0 ? `<td rowspan="${span}" style="text-align:center;vertical-align:middle;border:1px solid #000">${dailyHours}</td><td rowspan="${span}" style="text-align:center;vertical-align:middle;border:1px solid #000">${dailyAmount.toLocaleString('th-TH')}</td>` : '';
-        const time = value => { const v = String(value || '-'); return monthlySafe(v.includes('T') ? v.slice(11,16) : v); };
-        rows += `<tr><td style="text-align:center;border:1px solid #000">${++index}</td>${dateTd}<td style="text-align:center;border:1px solid #000">${time(log.checkIn)}</td><td style="text-align:center;border:1px solid #000">${time(log.checkOut)}</td>${sumTd}<td style="text-align:left;padding-left:5px;border:1px solid #000">${monthlySafe(log.details || '-')}</td><td style="border:1px solid #000"></td></tr>`;
-      });
-    });
-    const tbody = report.querySelector('#printTableBody');
-    if (tbody) tbody.innerHTML = rows;
-    const tfoot = report.querySelector('tfoot');
-    if (tfoot) {
-      const amountWords = typeof BAHTTEXT === 'function' ? BAHTTEXT(total) : '';
-      tfoot.innerHTML = `<tr><td colspan="5" style="text-align:center;font-weight:bold;border:1px solid #000">รวมเป็นเงินทั้งสิ้น</td><td style="text-align:center;font-weight:bold;border:1px solid #000">${total.toLocaleString('th-TH')}</td><td colspan="2" style="text-align:center;border:1px solid #000">${monthlySafe(amountWords ? '('+amountWords+')' : '')}</td></tr>`;
-    }
-    // ป้องกัน id ซ้ำกับใบ Timekeeping ปกติ
-    report.querySelectorAll('[id]').forEach(el => el.removeAttribute('id'));
-    report.classList.add('paper-sheet');
-    // ใช้ CSS print-mode-monthly-application และต้นแบบ report-table เดียวกับ Timekeeping
-    document.body.classList.add('print-mode-monthly-application');
-    const cleanup = () => {
-      document.body.classList.remove('print-mode-monthly-application');
-      report.classList.remove('paper-sheet');
-      report.innerHTML = '';
-      window.removeEventListener('afterprint', cleanup);
-    };
-    window.addEventListener('afterprint', cleanup);
-    setTimeout(() => { try { window.print(); } catch(e) { cleanup(); showAlert('ไม่สามารถเปิดหน้าพิมพ์ได้', 'error'); } }, 80);
-  }).withFailureHandler(err => showAlert('ไม่สามารถอ่านข้อมูล Timekeeping: ' + (err.message || err), 'error'))
-    .getStudentMonthlyLogs(token, currentUser.studentId);
+  const grouped = {};
+  items.forEach(item => { (grouped[item.dateKey] ||= []).push(item); });
+  let total = 0, serial = 0;
+  const rows = Object.entries(grouped).map(([day, dayItems]) => {
+    const [yy, mm, dd] = day.split('-').map(Number);
+    const date = `${dd}/${mm}/${yy + 543}`;
+    const dailyHours = dayItems.reduce((sum, item) => {
+      const hrs = Number(monthlyJobSlot(item.slot)[2]);
+      return sum + (Number.isFinite(hrs) ? hrs : 0);
+    }, 0);
+    // คำนวณจากช่วงเวลาประกาศเท่านั้น ไม่ใช่ค่าตอบแทนที่ลงเวลาจริงหรือได้รับอนุมัติ
+    const dailyPay = dailyHours >= 7 ? 300 : dailyHours >= 3.5 ? 150 : 0;
+    total += dailyPay;
+    return dayItems.map((item, index) => {
+      const [start, end] = monthlyJobSlot(item.slot);
+      const dateCell = index === 0 ? `<td rowspan="${dayItems.length}">${monthlySafe(date)}</td>` : '';
+      const payCells = index === 0
+        ? `<td rowspan="${dayItems.length}">${monthlySafe(String(Number(dailyHours.toFixed(2))))}</td><td rowspan="${dayItems.length}">${dailyPay.toLocaleString('th-TH')}</td>` : '';
+      const jobTitle = String(item.title || '-');
+      const detail = agencies.length > 1 ? `${jobTitle} (${item.agency || '-'})` : jobTitle;
+      // คอลัมน์เหมือน Timekeeping: ลำดับ | วันที่ | มา | กลับ | ชม. | บาท | รายละเอียด | ลายมือชื่อ
+      return `<tr><td>${++serial}</td>${dateCell}<td>${monthlySafe(start)}</td><td>${monthlySafe(end)}</td>${payCells}<td style="text-align:left;padding-left:5px">${monthlySafe(detail)}</td><td></td></tr>`;
+    }).join('');
+  }).join('');
+  const tbody = report.querySelector('#printTableBody');
+  if (!tbody) return showAlert('แบบฟอร์มไม่พบตารางลงเวลา', 'error');
+  tbody.innerHTML = rows;
+  fill('printTotalAmount', total.toLocaleString('th-TH'));
+  fill('printTotalAmountText', typeof BAHTTEXT === 'function' ? BAHTTEXT(total) : '');
+  // แยกเอกสารรายการสมัครออกจากเอกสารบันทึกเวลาจริงด้วยหมายเหตุที่ชัดเจน
+  const note = document.createElement('p');
+  note.className = 'monthly-document-note';
+  note.style.cssText = 'font-size:11px;margin:9px 0 0;line-height:1.4;';
+  note.textContent = 'หมายเหตุ: เอกสารนี้สรุปรายการงานที่สมัคร/ได้รับเข้าทำงานตามประกาศในเดือนที่เลือก จำนวนชั่วโมงและค่าตอบแทนเป็นประมาณการตามช่วงเวลาประกาศ ไม่ใช่ข้อมูลการลงเวลาจริงหรือหลักฐานอนุมัติเบิกจ่าย การลงเวลาและการเบิกจ่ายยังดำเนินการในระบบ Timekeeping แยกต่างหาก';
+  const table = report.querySelector('.report-table');
+  if (table) table.insertAdjacentElement('afterend', note);
+  report.querySelectorAll('[id]').forEach(el => el.removeAttribute('id'));
+  report.classList.add('paper-sheet');
+  document.body.classList.add('print-mode-monthly-application');
+  const cleanup = () => {
+    document.body.classList.remove('print-mode-monthly-application');
+    report.classList.remove('paper-sheet');
+    report.innerHTML = '';
+    window.removeEventListener('afterprint', cleanup);
+  };
+  window.addEventListener('afterprint', cleanup);
+  // ให้เบราว์เซอร์เรนเดอร์เอกสารก่อนเรียกหน้าพิมพ์
+  setTimeout(() => { try { window.print(); } catch (err) { cleanup(); showAlert('ไม่สามารถเปิดหน้าพิมพ์ได้', 'error'); } }, 80);
 }
