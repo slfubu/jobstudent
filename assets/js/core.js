@@ -1272,7 +1272,7 @@ function printStudentJobMonth(month, chosenDays, chosenRegistrationIds) {
     th.style.setProperty('vertical-align', 'middle', 'important');
   });
   fill('printTotalAmount', total.toLocaleString('th-TH'));
-  fill('printTotalAmountText', typeof BAHTTEXT === 'function' ? BAHTTEXT(total) : '');
+  fill('printTotalAmountText', typeof BAHTTEXT === 'function' ? String(BAHTTEXT(total)).trim().replace(/^\(+|\)+$/g, '') : '');
   report.querySelectorAll('[id]').forEach(el => el.removeAttribute('id'));
   report.classList.add('paper-sheet');
   // พื้นที่นี้เดิมมี inline display:none: ต้องทำให้เบราว์เซอร์ layout ได้ก่อน print preview
