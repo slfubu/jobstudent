@@ -303,8 +303,39 @@ function loadStudentFinance() {
         const container = document.getElementById('studentPayContainer');
         container.innerHTML = '';
 
+        // Claims are separate from paid transactions. Do not add them to the totals.
+        const claimItems = Array.isArray(res.claimHistory) ? res.claimHistory : [];
+        if (claimItems.length) {
+            const escapeClaimText = value => String(value == null ? '' : value)
+                .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+            const claimSection = document.createElement('section');
+            claimSection.className = 'student-claim-history';
+            claimSection.style.cssText = 'margin-bottom:20px;padding:16px;border:1px solid #dbe4ee;border-radius:10px;background:#f8fbff;';
+            const monthsThai = ['มกราคม','กุมภาพันธ์','มีนาคม','เมษายน','พฤษภาคม','มิถุนายน',
+                'กรกฎาคม','สิงหาคม','กันยายน','ตุลาคม','พฤศจิกายน','ธันวาคม'];
+            const entries = claimItems.map(item => {
+                const parts = String(item.month || '').split('-');
+                const year = Number(parts[0]);
+                const mi = Number(parts[1]) - 1;
+                const monthText = mi >= 0 && mi < 12 && year > 1900
+                    ? monthsThai[mi] + ' ' + (year > 2400 ? year : year + 543)
+                    : String(item.month || '-');
+                return `<tr><td style="padding:9px;border-bottom:1px solid #ddd">${escapeClaimText(monthText)}</td>` +
+                    `<td style="padding:9px;border-bottom:1px solid #ddd;text-align:center">${Number(item.count) || 0} รายการ</td>` +
+                    `<td style="padding:9px;border-bottom:1px solid #ddd">${escapeClaimText(item.status || 'ยืนยันแบบเบิกแล้ว')}</td></tr>`;
+            }).join('');
+            claimSection.innerHTML = '<h3 style="margin:0 0 8px">ประวัติแบบเบิกจากงานที่สมัคร</h3>' +
+                '<p style="font-size:13px;color:#555;margin:0 0 10px">รายการที่นักศึกษายืนยันแล้ว (ยังไม่ใช่รายการโอนเงินสำเร็จ และไม่รวมในยอดรับเงิน)</p>' +
+                '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse">' +
+                '<thead><tr><th style="text-align:left;padding:9px">เดือนที่ทำงาน</th>' +
+                '<th style="padding:9px">รายการที่ยืนยัน</th><th style="text-align:left;padding:9px">สถานะแบบเบิก</th></tr></thead>' +
+                '<tbody>' + entries + '</tbody></table></div>';
+            container.appendChild(claimSection);
+        }
+
         if (!res.history || res.history.length === 0) {
-            document.getElementById('noStudentPayHistory').style.display = 'block';
+            document.getElementById('noStudentPayHistory').style.display = claimItems.length ? 'none' : 'block';
             return;
         }
         document.getElementById('noStudentPayHistory').style.display = 'none';
@@ -511,36 +542,18 @@ function backToDisbursedMaster() {
 // ====================================================================
 
     // --- 1. เมื่อกดเมนู: เช็คสถานะเพื่อล็อกหรือไม่ล็อก ---
-    // Reload the saved state from Users instead of trusting the login/session snapshot.
-function refreshPersistedPromptPayStatus() {
-    const token = sessionStorage.getItem('sessionToken');
-    if (!token || !currentUser) return;
-    google.script.run
-      .withSuccessHandler(function(res) {
-        if (!res || res.success !== true) {
-          showAlert((res && res.message) || 'ไม่สามารถตรวจสอบข้อมูลพร้อมเพย์ที่บันทึกไว้', 'error');
-          return;
-        }
-        const bank = String(res.BankName || '').trim();
-        const pp = String(res.PromptPay || '').replace(/\s+/g, '');
-        currentUser.BankName = bank;
-        currentUser.bankName = bank;
-        currentUser.bankname = bank;
-        currentUser.PromptPay = pp;
-        currentUser.promptPay = pp;
-        currentUser.promptpay = pp;
-        sessionStorage.setItem('currentUser', JSON.stringify(currentUser));
-        updatePaymentUIState();
-      })
-      .withFailureHandler(function(err) {
-        showAlert('โหลดข้อมูลพร้อมเพย์ไม่สำเร็จ: ' + (err.message || err), 'error');
-      })
-      .getMyPromptPayInfo(token);
-}
+    setupNavClick('navPaymentInfo', 'paymentInfoSection', () => {
+        // เช็คว่ามี User อยู่ไหม
+        if (currentUser) {
+            // เติมค่าลงฟอร์ม (รองรับชื่อตัวแปรทั้งพิมพ์เล็กและพิมพ์ใหญ่)
+            const bp = currentUser.PromptPay || currentUser.promptpay || currentUser.promptPay || '';
+            const bn = currentUser.BankName || currentUser.bankname || currentUser.bankName || '';
 
-setupNavClick('navPaymentInfo', 'paymentInfoSection', () => {
-        if (currentUser) updatePaymentUIState();
-        refreshPersistedPromptPayStatus();
+            document.getElementById('userBankName').value = bn;
+            document.getElementById('userPromptPay').value = bp;
+            
+            updatePaymentUIState(); 
+        }
     });
 
 
