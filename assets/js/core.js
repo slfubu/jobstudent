@@ -555,7 +555,7 @@ function loadUserRegistrations() {
                 let statusClass = 'status-pending';
                 let manageButtonHtml = '';
                 if(status === 'confirmed' || status === 'approved' || status === 'รับเข้าทำงาน') { 
-                    statusText = 'รับเข้าทำงาน'; 
+                    statusText = 'รับอัตโนมัติ'; 
                     color = 'var(--success-color)'; 
                     statusClass = 'status-confirmed';
                     manageButtonHtml = `<button class="btn btn-danger-outline btn-cancel-reg" data-id="${monthlySafe(r.id)}" style="padding:5px 10px;font-size:12px;border:1px solid #b91c1c;color:#b91c1c;background:#fff">ยกเลิกสมัคร</button>`;
@@ -576,9 +576,9 @@ function loadUserRegistrations() {
                 
                 const row = tbody.insertRow();
                 row.insertCell().innerHTML = `<b>${r.jobTitle || 'งานทั่วไป'}</b>`;
-                row.insertCell().textContent = r.jobAgency || '-';
+                row.insertCell().textContent = r.jobAgency || 'ไม่พบข้อมูลหน่วยงาน';
 
-                let slotTh = studentJobSlotDisplay(r.timeSlot);
+                let slotTh = studentJobSlotDisplay(r.timeSlot || r.timeslot || r.slot);
                 row.insertCell().textContent = `${formatDate(r.activityDate)} (${slotTh})`;
                 
                 const statusCell = row.insertCell();
@@ -593,7 +593,7 @@ function loadUserRegistrations() {
                 mobileCard.innerHTML = `
                     <div class="reg-job-title">${r.jobTitle || 'งานทั่วไป'}</div>
                     <div class="reg-job-detail">
-                        <div><i class="material-icons" style="font-size:16px; vertical-align:sub; color:#999;">business</i> ${r.jobAgency || '-'}</div>
+                        <div><i class="material-icons" style="font-size:16px; vertical-align:sub; color:#999;">business</i> ${r.jobAgency || 'ไม่พบข้อมูลหน่วยงาน'}</div>
                         <div style="text-align: right;"><span class="reg-status-badge ${statusClass}">${statusText}</span></div>
                     </div>
                     <div style="display: flex; justify-content: space-between; align-items: center; border-top: 1px solid #f0f0f0; padding-top: 10px; margin-top: 10px;">
@@ -613,6 +613,11 @@ function loadUserRegistrations() {
         } else {
             document.getElementById('noUserRegistrations').style.display = 'block';
         }
+    }).withFailureHandler(err => {
+        hideLoading();
+        console.error('getUserRegistrations failed:', err);
+        const empty = document.getElementById('noUserRegistrations');
+        if (empty) { empty.style.display = 'block'; empty.textContent = 'ไม่สามารถโหลดงานที่สมัครไว้: ' + (err && err.message || err); }
     }).getUserRegistrations(sessionStorage.getItem('sessionToken'), currentUser.id); // 🛡️ แนบ Token
 }
 
