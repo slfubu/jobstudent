@@ -1134,39 +1134,88 @@ function loadStudentMonthlyJobs() {
     .getMyMonthlyJobApplications(sessionStorage.getItem('sessionToken'));
 }
 function printStudentJobMonth(month) {
-  const items = (studentMonthlyJobCache[month] || []).slice().sort((a,b)=>a.dateKey.localeCompare(b.dateKey));
-  if (!items.length) return showAlert('ไม่พบงานสำหรับเดือนนี้','warning');
-  const [year,number] = month.split('-').map(Number);
   const report = document.getElementById('monthlyApplicationPrint');
-  if (!report) return showAlert('ไม่พบพื้นที่พิมพ์เอกสาร กรุณาติดตั้งไฟล์หน้าเว็บให้ครบ','error');
-  const first = items[0];
-  const agencies = [...new Set(items.map(i=>String(i.agency || '-').trim()))];
-  const agencyText = agencies.length === 1 ? agencies[0] : agencies.join(' / ');
-  const monthLabel = `${monthlyThaiMonths[number-1]} ${year+543}`;
-  const rows = items.map((item,i)=>{
-    const slot=monthlyJobSlot(item.slot);
-    const date=item.dateKey.split('-');
-    const displayDate=`${Number(date[2])}/${Number(date[1])}/${Number(date[0])+543}`;
-    const details = `${item.title || '-'}${agencies.length > 1 ? ' (' + (item.agency || '-') + ')' : ''}`;
-    // ชั่วโมงตามประกาศไม่ใช่ชั่วโมงปฏิบัติงานจริง จึงไม่คำนวณค่าตอบแทน
-    return `<tr><td>${i+1}</td><td>${displayDate}</td><td>${monthlySafe(slot[0])}</td><td>${monthlySafe(slot[1])}</td><td>${monthlySafe(slot[2])}</td><td class="monthly-detail">${monthlySafe(details)}</td><td>—</td><td class="monthly-sign-col"></td></tr>`;
-  }).join('');
-  report.innerHTML = `
-    <div class="monthly-form-header"><h3>แบบลงเวลาและบันทึกภาระจ้างงานระหว่างเรียน มหาวิทยาลัยอุบลราชธานี</h3></div>
-    <div class="monthly-form-info">
-      <div class="monthly-info-line"><span><b>หน่วยงาน :</b> ${monthlySafe(agencyText)}</span><span><b>ประจำเดือน :</b> ${monthlySafe(monthLabel)}</span></div>
-      <div class="monthly-info-line"><span><b>ชื่อ-สกุล :</b> ${monthlySafe(first.studentName)}</span><span><b>รหัสนักศึกษา :</b> ${monthlySafe(first.studentId)}</span><span><b>คณะ :</b> ${monthlySafe(first.faculty)}</span></div>
-    </div>
-    <table class="monthly-print-table report-table">
-      <thead><tr><th style="width:5%">ลำดับ</th><th style="width:12%">วัน/เดือน/ปี</th><th style="width:9%">เวลามา</th><th style="width:9%">เวลากลับ</th><th style="width:10%">จำนวน (ชม.)*</th><th style="width:14%">ค่าตอบแทน (บาท)</th><th>รายละเอียด</th><th style="width:13%">ลายมือชื่อ</th></tr></thead>
-      <tbody>${rows}</tbody>
-      <tfoot><tr><td colspan="5" class="monthly-total-label">รวมเป็นเงินทั้งสิ้น</td><td class="monthly-total-value">—</td><td colspan="2" class="monthly-total-note">รอตรวจสอบการปฏิบัติงานจริง</td></tr></tfoot>
-    </table>
-    <div class="monthly-rate-note"><b>อัตราค่าตอบแทน</b><div>1) ปฏิบัติงาน 3.5 ชม. ค่าตอบแทน 150 บาท</div><div>2) ปฏิบัติงาน 7 ชม. ค่าตอบแทน 300 บาท (ไม่รวมเวลาหยุดพัก 12.00–13.00 น.)</div></div>
-    <div class="monthly-document-note">*เวลาที่แสดงอ้างอิงช่วงเวลาตามประกาศงาน ยังไม่ใช่การรับรองชั่วโมงปฏิบัติงานจริง เอกสารนี้เป็นสรุปรายการสมัครงานรายเดือน ไม่ใช้เป็นหลักฐานเบิกจ่ายจนกว่าจะบันทึกเวลาจริงและผ่านขั้นตอนรับรองในระบบลงเวลาปฏิบัติงาน</div>
-    <div class="monthly-signatures"><div><div class="monthly-sign-space"></div>ลงชื่อ..........................................................<div>(${monthlySafe(first.studentName)})</div><div>ผู้ปฏิบัติงาน</div></div><div><div class="monthly-sign-space"></div>ลงชื่อ..........................................................<div>(..........................................................)</div><div>ตำแหน่ง ..........................................................</div><div>ผู้รับรองการปฏิบัติงาน</div></div></div>`;
-  document.body.classList.add('print-mode-monthly-application');
-  const cleanup=()=>{document.body.classList.remove('print-mode-monthly-application');window.removeEventListener('afterprint',cleanup);};
-  window.addEventListener('afterprint',cleanup);
-  try {window.print();} finally {setTimeout(cleanup,2000);}
+  const template = document.getElementById('printTimeSheetArea');
+  if (!report || !template) return showAlert('ไม่พบแบบพิมพ์ Timekeeping กรุณาตรวจสอบไฟล์หน้าเว็บ', 'error');
+  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(String(month))) return showAlert('เดือนที่เลือกไม่ถูกต้อง', 'error');
+  if (!currentUser || !currentUser.studentId) return showAlert('กรุณาเข้าสู่ระบบใหม่', 'error');
+  const token = sessionStorage.getItem('sessionToken');
+  if (!token) return showAlert('เซสชันหมดอายุ กรุณาเข้าสู่ระบบใหม่', 'error');
+
+  // ใช้ข้อมูลชุดเดียวกับ Timekeeping: TimeLogs เฉพาะนักศึกษาที่เข้าสู่ระบบ
+  // API ปัจจุบันส่งเฉพาะรายการสถานะ Pending เหมือนหน้าลงเวลาปฏิบัติงาน
+  google.script.run.withSuccessHandler(function(res) {
+    if (!res || !Array.isArray(res.logs)) {
+      return showAlert((res && res.message) || 'อ่านข้อมูล Timekeeping ไม่สำเร็จ', 'error');
+    }
+    if (res.message && /Security Alert|ไม่อนุญาต|Error/i.test(res.message)) return showAlert(res.message, 'error');
+    const logs = res.logs.filter(log => monthlyDateKey(log.date)?.slice(0, 7) === month)
+      .sort((a,b) => monthlyDateKey(a.date).localeCompare(monthlyDateKey(b.date)));
+    if (!logs.length) return showAlert('ไม่พบข้อมูลลงเวลาจริงของเดือนนี้ใน Timekeeping (รายการที่ส่งเบิกแล้วอาจไม่อยู่ในสถานะ Pending)', 'warning');
+
+    // ใช้เอกสารต้นฉบับของ Timekeeping ทั้งหัวกระดาษ ตารางและส่วนลงนาม
+    report.innerHTML = template.innerHTML;
+    const fill = (id, val) => {
+      const el = report.querySelector('#' + id);
+      if (el) el.textContent = String(val == null ? '-' : val);
+    };
+    const [year, m] = month.split('-').map(Number);
+    const monthLabel = `${monthlyThaiMonths[m-1]} ${year+543}`;
+    const fullname = `${currentUser.prefix || ''}${currentUser.firstName || ''} ${currentUser.lastName || ''}`.trim();
+    const agency = typeof getTimesheetAgencyName === 'function'
+      ? getTimesheetAgencyName(currentUser.regularAgency)
+      : typeof getOfficialAgencyName === 'function'
+        ? getOfficialAgencyName(currentUser.regularAgency) : (currentUser.regularAgency || '-');
+    fill('printAgency', agency);
+    fill('printMonth', monthLabel);
+    fill('printName', fullname);
+    fill('printSignName', fullname);
+    fill('printId', currentUser.studentId);
+    fill('printFaculty', currentUser.faculty || '-');
+
+    const grouped = {};
+    logs.forEach(log => {
+      const key = monthlyDateKey(log.date);
+      (grouped[key] ||= []).push(log);
+    });
+    let index = 0, total = 0;
+    let rows = '';
+    Object.entries(grouped).forEach(([dayKey, dayLogs]) => {
+      const [yy, mm, dd] = dayKey.split('-').map(Number);
+      const dateLabel = `${dd}/${mm}/${yy+543}`;
+      const dailyHours = dayLogs.reduce((n, log) => n + (parseFloat(log.hours) || 0), 0);
+      // ใช้สูตรเดียวกับ renderTimeTable() ของ Timekeeping ไม่คำนวณจากประกาศงาน
+      const dailyAmount = dailyHours >= 7 ? 300 : dailyHours >= 3.5 ? 150
+        : dayLogs.reduce((n, log) => n + (parseInt(log.amount, 10) || 0), 0);
+      total += dailyAmount;
+      dayLogs.forEach((log, i) => {
+        const span = dayLogs.length;
+        const dateTd = i === 0 ? `<td rowspan="${span}" style="text-align:center;vertical-align:middle;border:1px solid #000">${monthlySafe(dateLabel)}</td>` : '';
+        const sumTd = i === 0 ? `<td rowspan="${span}" style="text-align:center;vertical-align:middle;border:1px solid #000">${dailyHours}</td><td rowspan="${span}" style="text-align:center;vertical-align:middle;border:1px solid #000">${dailyAmount.toLocaleString('th-TH')}</td>` : '';
+        const time = value => { const v = String(value || '-'); return monthlySafe(v.includes('T') ? v.slice(11,16) : v); };
+        rows += `<tr><td style="text-align:center;border:1px solid #000">${++index}</td>${dateTd}<td style="text-align:center;border:1px solid #000">${time(log.checkIn)}</td><td style="text-align:center;border:1px solid #000">${time(log.checkOut)}</td>${sumTd}<td style="text-align:left;padding-left:5px;border:1px solid #000">${monthlySafe(log.details || '-')}</td><td style="border:1px solid #000"></td></tr>`;
+      });
+    });
+    const tbody = report.querySelector('#printTableBody');
+    if (tbody) tbody.innerHTML = rows;
+    const tfoot = report.querySelector('tfoot');
+    if (tfoot) {
+      const amountWords = typeof BAHTTEXT === 'function' ? BAHTTEXT(total) : '';
+      tfoot.innerHTML = `<tr><td colspan="5" style="text-align:center;font-weight:bold;border:1px solid #000">รวมเป็นเงินทั้งสิ้น</td><td style="text-align:center;font-weight:bold;border:1px solid #000">${total.toLocaleString('th-TH')}</td><td colspan="2" style="text-align:center;border:1px solid #000">${monthlySafe(amountWords ? '('+amountWords+')' : '')}</td></tr>`;
+    }
+    // ป้องกัน id ซ้ำกับใบ Timekeeping ปกติ
+    report.querySelectorAll('[id]').forEach(el => el.removeAttribute('id'));
+    report.classList.add('paper-sheet');
+    // ใช้ CSS print-mode-monthly-application และต้นแบบ report-table เดียวกับ Timekeeping
+    document.body.classList.add('print-mode-monthly-application');
+    const cleanup = () => {
+      document.body.classList.remove('print-mode-monthly-application');
+      report.classList.remove('paper-sheet');
+      report.innerHTML = '';
+      window.removeEventListener('afterprint', cleanup);
+    };
+    window.addEventListener('afterprint', cleanup);
+    setTimeout(() => { try { window.print(); } catch(e) { cleanup(); showAlert('ไม่สามารถเปิดหน้าพิมพ์ได้', 'error'); } }, 80);
+  }).withFailureHandler(err => showAlert('ไม่สามารถอ่านข้อมูล Timekeeping: ' + (err.message || err), 'error'))
+    .getStudentMonthlyLogs(token, currentUser.studentId);
 }
