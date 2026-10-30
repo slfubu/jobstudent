@@ -648,6 +648,10 @@ function loadUserRegistrations() {
             hideLoading();
             jobs = data;
             renderJobs(jobs);
+        }).withFailureHandler(err => {
+            hideLoading();
+            console.error('getVisibleActivities failed:', err);
+            showAlert('ไม่สามารถโหลดงานที่เปิดรับสมัคร: ' + (err && err.message ? err.message : String(err)), 'error');
         }).getVisibleActivities(sessionStorage.getItem('sessionToken'));
     }
 
