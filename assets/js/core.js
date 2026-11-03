@@ -1338,3 +1338,78 @@ function printStudentJobMonth(month, chosenDays, chosenRegistrationIds) {
     }
   })();
 }
+
+
+// Staff-only bulk permission import: server derives agency from authenticated session.
+var regularBulkFailures = [];
+function regularBulkLoadXlsx_() {
+  if (window.XLSX) return Promise.resolve();
+  if (window.regularXlsxPromise_) return window.regularXlsxPromise_;
+  window.regularXlsxPromise_ = new Promise(function(resolve, reject) {
+    var script = document.createElement('script');
+    script.src = 'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js';
+    script.onload = function() { window.XLSX ? resolve() : reject(new Error('โหลดตัวอ่าน Excel ไม่สำเร็จ')); };
+    script.onerror = function() { reject(new Error('โหลดไลบรารี Excel ไม่สำเร็จ')); };
+    document.head.appendChild(script);
+  }).catch(function(err) { window.regularXlsxPromise_ = null; throw err; });
+  return window.regularXlsxPromise_;
+}
+async function importRegularExcel() {
+  var input = document.getElementById('regularBulkExcel');
+  var btn = document.getElementById('regularBulkImportBtn');
+  var resultBox = document.getElementById('regularBulkResult');
+  var failedBtn = document.getElementById('regularBulkFailedDownload');
+  if (!input || !btn || !resultBox || !failedBtn) return showAlert('ไม่พบฟอร์มนำเข้า Excel', 'error');
+  if (btn.disabled) return;
+  if (!input.files || !input.files.length) return showAlert('กรุณาเลือกไฟล์ Excel', 'error');
+  if (!/\.xls(x)?$/i.test(input.files[0].name)) return showAlert('รองรับ .xlsx และ .xls เท่านั้น', 'error');
+  if (input.files[0].size > 5 * 1024 * 1024) return showAlert('ไฟล์ต้องไม่เกิน 5 MB', 'error');
+  if (!currentUser || String(currentUser.role).toLowerCase() !== 'staff') return showAlert('เฉพาะเจ้าหน้าที่หน่วยงาน', 'error');
+  var token = sessionStorage.getItem('sessionToken');
+  if (!token) return showAlert('กรุณาเข้าสู่ระบบใหม่', 'error');
+  btn.disabled = true;
+  regularBulkFailures = [];
+  failedBtn.style.display = 'none';
+  resultBox.textContent = 'กำลังอ่านไฟล์...';
+  try {
+    await regularBulkLoadXlsx_();
+    var buf = await input.files[0].arrayBuffer();
+    var wb = XLSX.read(buf, {type:'array'});
+    var sheet = wb.Sheets[wb.SheetNames[0]];
+    if (!sheet) throw new Error('ไม่พบ Sheet ในไฟล์');
+    var rows = XLSX.utils.sheet_to_json(sheet, {header:1, raw:false, defval:''});
+    var ids = rows.map(function(row) { return String((row || [])[0] || '').replace(/^'/,'').trim(); }).filter(Boolean);
+    if (/^(student\s*id|studentid|รหัสนักศึกษา|รหัสนิสิต)$/i.test(ids[0] || '')) ids.shift();
+    if (!ids.length) throw new Error('ไม่พบรหัสนักศึกษาในคอลัมน์ A');
+    if (ids.length > 500) throw new Error('นำเข้าได้สูงสุด 500 รายการต่อครั้ง');
+    var confirm = await Swal.fire({title:'ยืนยันเพิ่มสิทธิ์ '+ids.length+' รายการ',text:'หน่วยงาน: '+String(currentUser.faculty||''),icon:'question',showCancelButton:true,confirmButtonText:'ยืนยันนำเข้า',cancelButtonText:'ยกเลิก'});
+    if (!confirm.isConfirmed) {resultBox.textContent='ยกเลิกการนำเข้า';return;}
+    resultBox.textContent = 'กำลังบันทึกสิทธิ์...';
+    var reply = await new Promise(function(resolve,reject) {
+      google.script.run.withSuccessHandler(resolve).withFailureHandler(reject).importRegularEmployeePermissions(token, ids);
+    });
+    if (!reply || !reply.success) throw new Error(reply && reply.message || 'บันทึกไม่สำเร็จ');
+    regularBulkFailures = Array.isArray(reply.failures) ? reply.failures : [];
+    resultBox.textContent = 'ทั้งหมด '+reply.total+' | เพิ่มสำเร็จ '+reply.imported+' | ไม่สำเร็จ '+reply.failed;
+    failedBtn.style.display = regularBulkFailures.length ? 'inline-block' : 'none';
+    if (typeof loadRegularEmployees === 'function') loadRegularEmployees();
+  } catch(err) {
+    resultBox.textContent = 'นำเข้าไม่สำเร็จ: '+(err.message || String(err));
+    showAlert(resultBox.textContent, 'error');
+  } finally { btn.disabled = false; }
+}
+function downloadRegularFailed() {
+  if (!regularBulkFailures.length) return;
+  var cell = function(value) {
+    var s = String(value == null ? '' : value);
+    if (/^[=+@-]/.test(s)) s = "'"+s;
+    return '"'+s.replace(/"/g,'""')+'"';
+  };
+  var csv = [['ลำดับ','รหัสนักศึกษา','สาเหตุ'].map(cell).join(',')].concat(regularBulkFailures.map(function(item) {
+    return [item.row, item.studentId, item.reason].map(cell).join(',');
+  })).join('\r\n');
+  var link = document.createElement('a');
+  var url = URL.createObjectURL(new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8'}));
+  link.href = url; link.download = 'regular_permission_failed.csv'; document.body.appendChild(link); link.click(); link.remove();
+  setTimeout(function(){URL.revokeObjectURL(url);},1000);
+}
