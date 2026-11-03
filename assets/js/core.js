@@ -1413,3 +1413,37 @@ function downloadRegularFailed() {
   link.href = url; link.download = 'regular_permission_failed.csv'; document.body.appendChild(link); link.click(); link.remove();
   setTimeout(function(){URL.revokeObjectURL(url);},1000);
 }
+
+
+// Bind dynamically mounted AppShell buttons without relying on inline onclick.
+// The button has no inline handler, preventing duplicate import attempts.
+if (!window.__regularBulkDelegatedEventsBound__) {
+  window.__regularBulkDelegatedEventsBound__ = true;
+  document.addEventListener('click', function(event) {
+    var button = event.target && event.target.closest ? event.target.closest('#regularBulkImportBtn') : null;
+    if (button) {
+      event.preventDefault();
+      if (typeof window.importRegularExcel !== 'function') {
+        var box = document.getElementById('regularBulkResult');
+        if (box) box.textContent = 'ไม่พบฟังก์ชันนำเข้า Excel กรุณาตรวจสอบไฟล์ core.js ที่ Deploy';
+        if (typeof window.showAlert === 'function') window.showAlert('ไม่พบฟังก์ชันนำเข้า Excel กรุณาตรวจสอบ Deployment', 'error');
+        return;
+      }
+      window.importRegularExcel();
+      return;
+    }
+    var failed = event.target && event.target.closest ? event.target.closest('#regularBulkFailedDownload') : null;
+    if (failed) {
+      event.preventDefault();
+      if (typeof window.downloadRegularFailed === 'function') window.downloadRegularFailed();
+    }
+  });
+  document.addEventListener('change', function(event) {
+    if (!event.target || event.target.id !== 'regularBulkExcel') return;
+    var file = event.target.files && event.target.files[0];
+    var result = document.getElementById('regularBulkResult');
+    if (result) result.textContent = file ? 'เลือกไฟล์แล้ว: ' + file.name : 'ยังไม่ได้เลือกไฟล์';
+  });
+}
+window.importRegularExcel = importRegularExcel;
+window.downloadRegularFailed = downloadRegularFailed;
