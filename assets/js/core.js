@@ -1341,7 +1341,7 @@ function printStudentJobMonth(month, chosenDays, chosenRegistrationIds) {
 
 
 // Staff-only bulk permission import: server derives agency from authenticated session.
-var regularBulkFailures = [];
+window.__ubuRegularBulkFailuresCore__ = window.__ubuRegularBulkFailuresCore__ || [];
 function regularBulkLoadXlsx_() {
   if (window.XLSX) return Promise.resolve();
   if (window.regularXlsxPromise_) return window.regularXlsxPromise_;
@@ -1368,7 +1368,7 @@ async function importRegularExcel() {
   var token = sessionStorage.getItem('sessionToken');
   if (!token) return showAlert('กรุณาเข้าสู่ระบบใหม่', 'error');
   btn.disabled = true;
-  regularBulkFailures = [];
+  window.__ubuRegularBulkFailuresCore__ = [];
   failedBtn.style.display = 'none';
   resultBox.textContent = 'กำลังอ่านไฟล์...';
   try {
@@ -1389,9 +1389,9 @@ async function importRegularExcel() {
       google.script.run.withSuccessHandler(resolve).withFailureHandler(reject).importRegularEmployeePermissions(token, ids);
     });
     if (!reply || !reply.success) throw new Error(reply && reply.message || 'บันทึกไม่สำเร็จ');
-    regularBulkFailures = Array.isArray(reply.failures) ? reply.failures : [];
+    window.__ubuRegularBulkFailuresCore__ = Array.isArray(reply.failures) ? reply.failures : [];
     resultBox.textContent = 'ทั้งหมด '+reply.total+' | เพิ่มสำเร็จ '+reply.imported+' | ไม่สำเร็จ '+reply.failed;
-    failedBtn.style.display = regularBulkFailures.length ? 'inline-block' : 'none';
+    failedBtn.style.display = window.__ubuRegularBulkFailuresCore__.length ? 'inline-block' : 'none';
     if (typeof loadRegularEmployees === 'function') loadRegularEmployees();
   } catch(err) {
     resultBox.textContent = 'นำเข้าไม่สำเร็จ: '+(err.message || String(err));
@@ -1399,13 +1399,13 @@ async function importRegularExcel() {
   } finally { btn.disabled = false; }
 }
 function downloadRegularFailed() {
-  if (!regularBulkFailures.length) return;
+  if (!window.__ubuRegularBulkFailuresCore__.length) return;
   var cell = function(value) {
     var s = String(value == null ? '' : value);
     if (/^[=+@-]/.test(s)) s = "'"+s;
     return '"'+s.replace(/"/g,'""')+'"';
   };
-  var csv = [['ลำดับ','รหัสนักศึกษา','สาเหตุ'].map(cell).join(',')].concat(regularBulkFailures.map(function(item) {
+  var csv = [['ลำดับ','รหัสนักศึกษา','สาเหตุ'].map(cell).join(',')].concat(window.__ubuRegularBulkFailuresCore__.map(function(item) {
     return [item.row, item.studentId, item.reason].map(cell).join(',');
   })).join('\r\n');
   var link = document.createElement('a');
