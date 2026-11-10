@@ -6,7 +6,7 @@
  * 3) Keep the URL ending in /exec (not /dev).
  */
 window.APP_CONFIG = Object.freeze({
-  API_URL: 'https://script.google.com/macros/s/AKfycbxrMKJ-YGL9m7tMqQ_HuwYhgL4KNZDlUZMN3UyxaVD5DcPxKqc4wou37YJwgPaJfBUOzg/exec',
+  API_URL: 'https://script.google.com/macros/s/AKfycby6ClqMqTQHyVsfK_v610WbG9O4titi5UjJAEv873nFSID2g4mAwBP8ji_XkrqVTV_7Zg/exec',
   REQUEST_TIMEOUT_MS: 120000,
   DEBUG_API: false
 });
