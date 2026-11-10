@@ -1843,4 +1843,3 @@ function confirmCutBudget() {
         }
     });
 }
-
