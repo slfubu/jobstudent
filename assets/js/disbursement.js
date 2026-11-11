@@ -748,7 +748,11 @@ function reportApprovalDateKey(item) {
     const raw = String(item && item.approvalDate || '').trim();
     if (!raw) return '';
     let m = raw.match(/^(\d{4})-(\d{2})-(\d{2})/);
-    if (m) return `${m[1]}-${m[2]}-${m[3]}`;
+    if (m) {
+        let year = Number(m[1]);
+        if (year > 2400) year -= 543;
+        return `${year}-${m[2]}-${m[3]}`;
+    }
     m = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
     if (m) {
         let year = Number(m[3]);
@@ -767,6 +771,40 @@ function matchesReportApprovalDate(item) {
     return (!from || approved >= from) && (!to || approved <= to);
 }
 
+
+// เลือกช่วงวันที่อนุมัติด้วยตัวเอง (ค่า input type=date เป็น YYYY-MM-DD)
+// ยังไม่ดึงรายการงานจนกดปุ่ม "ดึงข้อมูล" และเปลี่ยนตัวกรองจะล้างผลเดิม
+function updateReportApprovalFetchButton_() {
+    const btn = document.getElementById('reportApprovalCheckBtn');
+    const dept = document.getElementById('reportDeptSelector')?.value || '';
+    const from = document.getElementById('reportApprovalDateFrom')?.value || '';
+    const to = document.getElementById('reportApprovalDateTo')?.value || '';
+    if (btn) btn.disabled = !(dept && from && to && from <= to);
+}
+function onReportAgencyChanged_() {
+    const from = document.getElementById('reportApprovalDateFrom');
+    const to = document.getElementById('reportApprovalDateTo');
+    if (from) from.value = '';
+    if (to) to.value = '';
+    invalidateReportApprovalCheck();
+    const hint = document.getElementById('reportApprovalCheckHint');
+    if (hint) hint.textContent = 'เลือกวันที่เริ่มต้นและวันที่สิ้นสุดที่ต้องการ แล้วกด “ดึงข้อมูล”';
+}
+function onReportApprovalRangeChanged_() {
+    invalidateReportApprovalCheck();
+    const from = document.getElementById('reportApprovalDateFrom')?.value || '';
+    const to = document.getElementById('reportApprovalDateTo')?.value || '';
+    const hint = document.getElementById('reportApprovalCheckHint');
+    if (!hint) return;
+    if (from && to && from > to) {
+        hint.textContent = 'ช่วงวันที่ไม่ถูกต้อง: วันที่เริ่มต้นต้องไม่เกินวันที่สิ้นสุด';
+    } else if (from && to) {
+        hint.textContent = 'ระบุช่วงวันที่แล้ว กด “ดึงข้อมูล” เพื่อค้นหารายการ Payroll ที่อนุมัติภายในช่วงนี้';
+    } else {
+        hint.textContent = 'กรุณาระบุวันที่เริ่มต้นและวันที่สิ้นสุดให้ครบ';
+    }
+}
+
 function isReportAgencyMatch(item, selectedDept) {
     const itemAgency = item.jobAgency || item.department;
     return selectedDept === '__ALL_AGENCIES__' || (selectedDept === WELFARE_GROUP_NAME ? WELFARE_SUB_UNITS_LIST.includes(itemAgency) : itemAgency === selectedDept);
@@ -775,35 +813,108 @@ function isReportAgencyMatch(item, selectedDept) {
 function ensureReportMonthSelector() {
     let select = document.getElementById('reportMonthSelector');
     if (select) return select;
-
     const jobContainer = document.getElementById('jobCheckboxContainer');
     if (!jobContainer || !jobContainer.parentNode) return null;
-
     const box = document.createElement('div');
     box.id = 'reportMonthAutoBox';
     box.style.cssText = 'margin-bottom:16px;padding:14px 16px;background:#fff8e1;border:1px solid #ffe082;border-radius:8px;';
     box.innerHTML = `
-        <label for="reportMonthSelector" style="display:block;font-weight:600;margin-bottom:7px;color:#5d4037;">
-            ประจำเดือนที่ขอเบิก
-        </label>
-        <select id="reportMonthSelector" class="form-control" style="width:100%;max-width:360px;" onchange="renderJobCheckboxes()">
-            <option value="">-- เลือกประจำเดือน --</option>
-        </select>
-        <div id="reportMonthHint" style="font-size:12px;color:#795548;margin-top:6px;">
-            เดือนที่นักศึกษาปฏิบัติงานจริง (WorkDate) ไม่ใช่เดือนที่เจ้าหน้าที่อนุมัติ
+        <div style="font-weight:600;color:#5d4037;margin-bottom:8px">2. เลือกช่วงวันที่เจ้าหน้าที่อนุมัติเบิกจ่ายเข้า Payroll</div>
+        <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:end">
+          <label for="reportApprovalDateFrom" style="flex:1;min-width:190px;font-weight:600">วันที่เริ่มต้น
+            <input id="reportApprovalDateFrom" type="date" lang="th-TH" class="form-control" style="display:block;width:100%;box-sizing:border-box;margin-top:5px" oninput="onReportApprovalRangeChanged_()" onchange="onReportApprovalRangeChanged_()">
+          </label>
+          <label for="reportApprovalDateTo" style="flex:1;min-width:190px;font-weight:600">วันที่สิ้นสุด
+            <input id="reportApprovalDateTo" type="date" lang="th-TH" class="form-control" style="display:block;width:100%;box-sizing:border-box;margin-top:5px" oninput="onReportApprovalRangeChanged_()" onchange="onReportApprovalRangeChanged_()">
+          </label>
+          <button type="button" id="reportApprovalCheckBtn" class="btn btn-primary" onclick="refreshReportByApprovalDate()" disabled>ดึงข้อมูล</button>
+        </div>
+        <div id="reportApprovalCheckHint" style="font-size:12px;color:#795548;margin-top:8px">เลือกหน่วยงานและระบุช่วงวันที่ เช่น 1–5 ต.ค. 2569 แล้วกด “ดึงข้อมูล”</div>
+        <div id="reportMonthControls" style="display:none;margin-top:14px;padding-top:12px;border-top:1px solid #e9d49a">
+          <label for="reportMonthSelector" style="display:block;font-weight:600;margin-bottom:7px;color:#5d4037">3. ประจำเดือนที่ขอเบิก (เดือนปฏิบัติงาน)</label>
+          <select id="reportMonthSelector" class="form-control" style="width:100%;max-width:360px" onchange="renderJobCheckboxes()"><option value="">-- เลือกประจำเดือน --</option></select>
         </div>`;
-
-    box.insertAdjacentHTML('beforeend', `
-        <div style="margin-top:14px;border-top:1px solid #e9d49a;padding-top:12px">
-          <label style="display:block;font-weight:600;margin-bottom:7px;color:#5d4037">วันที่เจ้าหน้าที่อนุมัติเบิกจ่ายเข้า Payroll (ตัวกรองเพิ่มเติม)</label>
-          <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center">
-            <label>ตั้งแต่ <input id="reportApprovalDateFrom" type="date" class="form-control" style="width:auto;display:inline-block" onchange="renderJobCheckboxes()"></label>
-            <label>ถึง <input id="reportApprovalDateTo" type="date" class="form-control" style="width:auto;display:inline-block" onchange="renderJobCheckboxes()"></label>
-          </div>
-          <div style="font-size:12px;color:#795548;margin-top:6px">เว้นว่างเพื่อแสดงทุกวันที่อนุมัติภายในเดือนปฏิบัติงานที่เลือก</div>
-        </div>`);
     jobContainer.parentNode.insertBefore(box, jobContainer);
     return box.querySelector('#reportMonthSelector');
+}
+
+// Never show old results for another agency or date range.
+let reportApprovalRefreshRequestId = 0;
+let reportApprovalVerifiedKey = '';
+function reportApprovalSelectionKey_() {
+    const dept = document.getElementById('reportDeptSelector')?.value || '';
+    const from = document.getElementById('reportApprovalDateFrom')?.value || '';
+    const to = document.getElementById('reportApprovalDateTo')?.value || '';
+    return [dept, from, to].join('|');
+}
+function showReportCheckedResults_(visible) {
+    const container = document.getElementById('jobCheckboxContainer');
+    const month = document.getElementById('reportMonthControls');
+    if (month) month.style.display = visible ? 'block' : 'none';
+    const area = document.getElementById('jobSelectionArea');
+    if (area) area.style.display = visible ? 'block' : 'none';
+    if (container) {
+        container.style.display = visible ? 'block' : 'none';
+        if (container.previousElementSibling) container.previousElementSibling.style.display = visible ? 'block' : 'none';
+        if (container.nextElementSibling) container.nextElementSibling.style.display = visible ? 'block' : 'none';
+    }
+    if (!visible) {
+        if (container) container.innerHTML = '';
+        const preview = document.getElementById('reportPreviewArea');
+        if (preview) preview.style.display = 'none';
+        const noData = document.getElementById('noReportData');
+        if (noData) noData.style.display = 'none';
+    }
+}
+function invalidateReportApprovalCheck() {
+    reportApprovalRefreshRequestId++;
+    reportApprovalVerifiedKey = '';
+    reportMonthDeptKey = '';
+    const checkBtn = document.getElementById('reportApprovalCheckBtn');
+    if (checkBtn) checkBtn.disabled = false;
+    showReportCheckedResults_(false);
+    const hint = document.getElementById('reportApprovalCheckHint');
+    if (hint) hint.textContent = 'ข้อมูลเปลี่ยนแล้ว กรุณากด “ดึงข้อมูล” เพื่อโหลดรายการใหม่';
+    updateReportApprovalFetchButton_();
+}
+function refreshReportByApprovalDate() {
+    const from = document.getElementById('reportApprovalDateFrom')?.value || '';
+    const to = document.getElementById('reportApprovalDateTo')?.value || '';
+    const dept = document.getElementById('reportDeptSelector')?.value || '';
+    invalidateReportApprovalCheck();
+    if (!dept) return showAlert('กรุณาเลือกหน่วยงานก่อนตรวจสอบ', 'warning');
+    if (!from || !to) return showAlert('กรุณาเลือกวันที่เริ่มต้นและวันที่สิ้นสุดให้ครบ', 'warning');
+    if (from && to && from > to) return showAlert('วันที่เริ่มต้นต้องไม่เกินวันที่สิ้นสุด', 'warning');
+    const token = sessionStorage.getItem('sessionToken');
+    if (!token) return showAlert('กรุณาเข้าสู่ระบบใหม่', 'error');
+    const requestId = ++reportApprovalRefreshRequestId;
+    const checkedKey = reportApprovalSelectionKey_();
+    const btn = document.getElementById('reportApprovalCheckBtn');
+    if (btn) btn.disabled = true;
+    showLoading();
+    google.script.run
+        .withSuccessHandler(list => {
+            if (requestId !== reportApprovalRefreshRequestId || checkedKey !== reportApprovalSelectionKey_()) return;
+            hideLoading();
+            if (btn) btn.disabled = false;
+            if (!Array.isArray(list)) return showAlert('ข้อมูล Payroll ที่ได้รับไม่ถูกต้อง', 'error');
+            reportDataCache = list;
+            reportApprovalVerifiedKey = checkedKey;
+            reportMonthDeptKey = dept;
+            populateReportMonthOptions(dept);
+            const monthSelect = document.getElementById('reportMonthSelector');
+            const hint = document.getElementById('reportApprovalCheckHint');
+            if (hint) hint.textContent = monthSelect && monthSelect.options.length > 1 ? 'ดึงข้อมูลสำเร็จ เลือกเดือนและรายการงานที่ต้องการออกรายงาน' : 'ตรวจสอบแล้ว ไม่พบรายการที่อนุมัติในช่วงวันที่เลือก';
+            showReportCheckedResults_(true);
+            renderJobCheckboxes();
+        })
+        .withFailureHandler(err => {
+            if (requestId !== reportApprovalRefreshRequestId) return;
+            hideLoading();
+            if (btn) btn.disabled = false;
+            showAlert('ตรวจสอบข้อมูลไม่สำเร็จ: ' + ((err && err.message) || String(err)), 'error');
+        })
+        .getDisbursedHistory(token, currentUser.id);
 }
 
 function populateReportMonthOptions(selectedDept) {
@@ -814,6 +925,7 @@ function populateReportMonthOptions(selectedDept) {
     reportDataCache.forEach(item => {
         if (item.status !== 'อนุมัติรอกองคลังโอนเงิน') return;
         if (!isReportAgencyMatch(item, selectedDept)) return;
+        if (!matchesReportApprovalDate(item)) return;
         const meta = getReportMonthMeta(item);
         if (meta) monthMap.set(meta.key, meta.label);
     });
@@ -830,8 +942,9 @@ function populateReportMonthOptions(selectedDept) {
         select.appendChild(opt);
     });
 
-    // ถ้ามีเพียงเดือนเดียว ให้เลือกให้อัตโนมัติ
-    if (monthOptions.length === 1) {
+    // เมื่อกรองวันที่อนุมัติ เลือกเดือนปฏิบัติงานที่ตรงเงื่อนไขให้ทันที
+    const hasDateFilter = !!(document.getElementById('reportApprovalDateFrom')?.value || document.getElementById('reportApprovalDateTo')?.value);
+    if (monthOptions.length === 1 || (hasDateFilter && monthOptions.length > 0)) {
         select.value = monthOptions[0].key;
     }
 
@@ -841,20 +954,35 @@ function populateReportMonthOptions(selectedDept) {
 function loadReportJobOptions() {
     showLoading();
     
-    document.getElementById('reportDeptSelector').innerHTML = '<option value="">-- กรุณาเลือกหน่วยงาน --</option>';
+    const deptSelect = document.getElementById('reportDeptSelector');
+    // Support older AppShell markup as well: the agency event always updates available dates.
+    deptSelect.onchange = onReportAgencyChanged_;
+    deptSelect.innerHTML = '<option value="">-- กรุณาเลือกหน่วยงาน --</option>';
     document.getElementById('jobSelectionArea').style.display = 'none';
     document.getElementById('reportPreviewArea').style.display = 'none';
     document.getElementById('noReportData').style.display = 'none';
     reportMonthDeptKey = '';
-    const oldMonthBox = document.getElementById('reportMonthAutoBox');
-    if (oldMonthBox) oldMonthBox.remove();
+    reportApprovalVerifiedKey = '';
+    reportApprovalRefreshRequestId++;
+    const from = document.getElementById('reportApprovalDateFrom');
+    const to = document.getElementById('reportApprovalDateTo');
+    if (from) from.value = '';
+    if (to) to.value = '';
+    updateReportApprovalFetchButton_();
+    // The date filter is always visible; jobs remain hidden until Fetch is clicked.
+    document.getElementById('jobSelectionArea').style.display = 'none';
+    ensureReportMonthSelector();
+    showReportCheckedResults_(false);
 
     const token = sessionStorage.getItem('sessionToken');
 
     google.script.run.withSuccessHandler(list => {
         hideLoading();
         
-        if (!list || list.length === 0) {
+        if (!Array.isArray(list) || list.length === 0) {
+            reportDataCache = [];
+            const hint = document.getElementById('reportApprovalCheckHint');
+            if (hint) hint.textContent = 'ไม่พบรายการ Payroll หรือ Backend ไม่สามารถส่งข้อมูลมาได้ กรุณาตรวจข้อมูลและ Deployment';
             return;
         }
 
@@ -910,23 +1038,13 @@ function renderJobCheckboxes() {
     container.innerHTML = '';
     document.getElementById('reportPreviewArea').style.display = 'none';
 
-    if (!selectedDept) {
-        selectionArea.style.display = 'none';
-        reportMonthDeptKey = '';
-        const monthBox = document.getElementById('reportMonthAutoBox');
-        if (monthBox) monthBox.remove();
-        return;
-    }
-
-    selectionArea.style.display = 'block';
     const monthSelect = ensureReportMonthSelector();
     if (!monthSelect) return;
-
-    // เปลี่ยนหน่วยงานเมื่อใด ให้สร้างรายการเดือนใหม่จากข้อมูลที่อนุมัติของหน่วยงานนั้น
-    if (reportMonthDeptKey !== selectedDept) {
-        reportMonthDeptKey = selectedDept;
-        populateReportMonthOptions(selectedDept);
+    if (!selectedDept || !reportApprovalVerifiedKey || reportApprovalVerifiedKey !== reportApprovalSelectionKey_()) {
+        invalidateReportApprovalCheck();
+        return;
     }
+    showReportCheckedResults_(true);
 
     const selectedMonthKey = monthSelect.value;
     if (!selectedMonthKey) {
@@ -951,7 +1069,7 @@ function renderJobCheckboxes() {
     }))].sort();
 
     if (uniqueJobs.length === 0) {
-        container.innerHTML = '<div style="text-align:center; color:#999; padding:10px;">ไม่พบรายการที่ต้องออกรายงานในเดือนนี้</div>';
+        container.innerHTML = '<div style="text-align:center; color:#999; padding:10px;">ไม่พบรายการที่ตรงกับหน่วยงาน เดือนปฏิบัติงาน และวันที่อนุมัติที่เลือก</div>';
     } else {
         container.innerHTML = `
             <div style="padding-bottom:10px; border-bottom:1px solid #eee; margin-bottom:10px;">
@@ -1001,6 +1119,9 @@ function toggleAllJobs() {
 
 // --- 3. สร้างรายงาน: บังคับเลือกเดือนก่อนสร้าง ---
 function generateFinancialReport() {
+    if (!reportApprovalVerifiedKey || reportApprovalVerifiedKey !== reportApprovalSelectionKey_()) {
+        return showAlert('กรุณาเลือกวันที่และกดตรวจสอบรายการก่อนสร้างรายงาน', 'warning');
+    }
     const selectedDept = document.getElementById('reportDeptSelector').value;
     const monthSelect = document.getElementById('reportMonthSelector');
     const selectedMonthKey = monthSelect ? monthSelect.value : '';
@@ -1147,12 +1268,16 @@ function renderReportWithTitle(selectedDept, selectedJobs, finalJobTitle, select
                 studentId: item.studentId,
                 fullName: item.studentName || '-', 
                 faculty: item.userFaculty || item.faculty || '-', 
-                promptPay: item.promptPay || '-', 
+                promptPay: item.promptPay || '-',
+                email: item.email || '-',
+                phone: item.phone || '-',
                 totalAmount: 0,
                 agency: item.jobAgency 
             });
         }
         const current = studentMap.get(key);
+        if ((!current.email || current.email === '-') && item.email) current.email = item.email;
+        if ((!current.phone || current.phone === '-') && item.phone) current.phone = item.phone;
         current.totalAmount += Number(item.amount || 0);
     });
 
@@ -1328,6 +1453,13 @@ function renderReportWithTitle(selectedDept, selectedJobs, finalJobTitle, select
 }
 
 // --- ฟังก์ชันดาวน์โหลดรายงานเบิกจ่าย ฉบับ Excel (.xls) แก้หน้าขาว 100% ---
+function safeExcelCell(value) {
+    const text = String(value == null || value === '' ? '-' : value);
+    // Prevent HTML injection and formula interpretation in spreadsheet applications.
+    const safe = /^[=+@\-\t\r]/.test(text) ? "'" + text : text;
+    return safe.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
 function downloadFinancialReportCSV() {
     try {
         if(!currentReportJobInfo || !currentReportJobInfo.data || currentReportJobInfo.data.length === 0) {
@@ -1346,15 +1478,15 @@ function downloadFinancialReportCSV() {
             totalAmount += (Number(st.totalAmount) || 0);
         });
         
-        const colSpanCount = isWelfare ? 7 : 6;
+        const colSpanCount = isWelfare ? 9 : 8;
         
         // 2. สร้างตาราง HTML แบบปลอดภัย (ไม่ใช้เครื่องหมายซับซ้อน)
         let tableHTML = "<table border='1'>";
         
         // --- [จุดที่เพิ่มใหม่] หัวรายงานในไฟล์ Excel ---
         tableHTML += `<tr><td colspan='${colSpanCount}' style='font-size: 18px; font-weight: bold; text-align: center;'>รายงานการเบิกจ่ายค่าตอบแทนนักศึกษา</td></tr>`;
-        tableHTML += `<tr><td colspan='${colSpanCount}' style='font-size: 16px; font-weight: bold; text-align: center;'>หน่วยงาน: ${agencyName}</td></tr>`;
-        tableHTML += `<tr><td colspan='${colSpanCount}' style='font-size: 16px; font-weight: bold; text-align: center;'>ประจำเดือน: ${monthYear}</td></tr>`;
+        tableHTML += `<tr><td colspan='${colSpanCount}' style='font-size: 16px; font-weight: bold; text-align: center;'>หน่วยงาน: ${safeExcelCell(agencyName)}</td></tr>`;
+        tableHTML += `<tr><td colspan='${colSpanCount}' style='font-size: 16px; font-weight: bold; text-align: center;'>ประจำเดือน: ${safeExcelCell(monthYear)}</td></tr>`;
         tableHTML += `<tr><td colspan='${colSpanCount}' style='font-size: 16px; font-weight: bold; text-align: center; color: #1976D2;'>รวมยอดเงินเบิกจ่ายทั้งสิ้น: ${totalAmount.toLocaleString()} บาท</td></tr>`;
         tableHTML += `<tr><td colspan='${colSpanCount}'></td></tr>`; // เว้น 1 บรรทัดก่อนเริ่มตาราง
         
@@ -1362,22 +1494,25 @@ function downloadFinancialReportCSV() {
         tableHTML += "<tr style='background-color: #f2f2f2; font-weight: bold; text-align: center;'>";
         tableHTML += "<td>ลำดับ</td>";
         if(isWelfare) tableHTML += "<td>หน่วยงาน</td>";
-        tableHTML += "<td>รหัสนักศึกษา</td><td>ชื่อ-สกุล</td><td>คณะ</td><td>เลขบัญชี(พร้อมเพย์)</td><td>จำนวนเงิน</td>";
+        tableHTML += "<td>รหัสนักศึกษา</td><td>ชื่อ-สกุล</td><td>คณะ</td><td>อีเมล</td><td>เบอร์โทรศัพท์</td><td>เลขบัญชี(พร้อมเพย์)</td><td>จำนวนเงิน</td>";
         tableHTML += "</tr>";
 
         // ข้อมูลนักศึกษา
         currentReportJobInfo.data.forEach((st, index) => {
             tableHTML += "<tr>";
             tableHTML += "<td style='text-align: center;'>" + (index + 1) + "</td>";
-            if(isWelfare) tableHTML += "<td>" + (st.agency || "-") + "</td>";
+            if(isWelfare) tableHTML += "<td>" + safeExcelCell(st.agency) + "</td>";
             
             // ใช้ mso-number-format:"\@" บังคับให้ Excel ล็อกเลขเป็น 13 หลัก (ไม่เป็น E+12) 
-            tableHTML += "<td style='mso-number-format:\"\\@\"; text-align: center;'>" + (st.studentId || "-") + "</td>";
-            tableHTML += "<td>" + (st.fullName || "-") + "</td>";
-            tableHTML += "<td>" + (st.faculty || "-") + "</td>";
+            tableHTML += "<td style='mso-number-format:\"\\@\"; text-align: center;'>" + safeExcelCell(st.studentId) + "</td>";
+            tableHTML += "<td>" + safeExcelCell(st.fullName) + "</td>";
+            tableHTML += "<td>" + safeExcelCell(st.faculty) + "</td>";
             
+            tableHTML += "<td>" + safeExcelCell(st.email) + "</td>";
+            tableHTML += "<td style='mso-number-format:Text; text-align:center'>" + safeExcelCell(st.phone) + "</td>";
+
             // ล็อกเลขพร้อมเพย์ให้เป็น 13 หลักและจัดชิดขวา
-            tableHTML += "<td style='mso-number-format:\"\\@\"; text-align: right;'>" + (st.promptPay || "-") + "</td>";
+            tableHTML += "<td style='mso-number-format:\"\\@\"; text-align: right;'>" + safeExcelCell(st.promptPay) + "</td>";
             tableHTML += "<td style='text-align: right;'>" + (st.totalAmount || 0) + "</td>";
             tableHTML += "</tr>";
         });
