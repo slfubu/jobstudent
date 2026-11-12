@@ -100,9 +100,11 @@
   }
   async function adminLoad(){
     if(!$('ciAdminJob'))return;busy(true);
+    let loaded=false;
     try{
-      const res=await api('ciAdminJobs');if(!res||!res.success)throw Error('โหลดงานไม่สำเร็จ');
-      state.adminJobs=res.items||[];
+      const res=await api('ciAdminJobs');
+      if(!res||!res.success)throw Error(res&&res.message||'โหลดงานไม่สำเร็จ (ตรวจการติดตั้ง Check-in และ Deployment)');
+      state.adminJobs=Array.isArray(res.items)?res.items:[];
       const previous=$('ciAdminJob').value,select=$('ciAdminJob');select.replaceChildren(new Option('— เลือกงาน —',''));
       state.adminJobs.forEach(x=>select.add(new Option(`${x.title} | ${x.agency} | ${formatDay(x.date)}`,x.activityId)));
       if(state.adminJobs.some(x=>x.activityId===previous))select.value=previous;
@@ -111,8 +113,17 @@
       $('ciPilotToggle').dataset.next=String(!res.enabled);
       $('ciPilotToggle').hidden=role()!=='admin';
       fillConfig();
-    }catch(e){await fail(e)}finally{busy(false)}
-    await adminRecords();
+      loaded=true;
+    }catch(e){
+      const text=e&&e.message?e.message:String(e);
+      const help=/เกิดข้อผิดพลาดในการประมวลผลคำขอ/.test(text)
+        ? ' Backend ยังส่งข้อผิดพลาดทั่วไป: ตรวจว่ารัน ciSetupCheckinPilot() แล้ว และ Apps Script Deployment ชี้ไปยังเวอร์ชันที่ติดตั้ง UBU_Checkin.gs / Api.gs ใหม่'
+        : '';
+      const chosen=$('ciAdminChosen');if(chosen)chosen.textContent='ยังโหลดงาน Check-in ไม่สำเร็จ: '+text+help;
+      await fail(Error(text+help));
+    }finally{busy(false)}
+    // Do not run a second API request after an unsuccessful job-list request.
+    if(loaded)await adminRecords();
   }
   async function useMyLocation(){
     try{const p=await locate();$('ciLat').value=p.latitude.toFixed(7);$('ciLng').value=p.longitude.toFixed(7);await msg('รับพิกัดเรียบร้อย ความแม่นยำ '+Math.round(p.accuracy)+' เมตร โปรดตรวจสอบก่อนบันทึก');}
