@@ -85,10 +85,30 @@
     try{
       const pos=await locate();
       const result=await api('ciSubmitPhoto',{registrationId:selected.registrationId,phase:phase,position:pos,photo:state.studentPhoto,consent:true});
-      if(!result||!result.success)throw Error(result&&result.message||'บันทึกไม่สำเร็จ');
+      if(!result||!result.success){
+        const detail=result&&result.message||'บันทึกไม่สำเร็จ';
+        const code=result&&result.code?' ['+result.code+']':'';
+        throw Error(detail+code);
+      }
       await msg(result.message+' | ระยะ '+result.distanceM+' เมตร','success');
       resetPhoto();await studentLoad();
-    }catch(e){await fail(e)}finally{busy(false)}
+    }catch(e){
+      // The server may have saved the record but the response was lost.
+      // Confirm status before telling the student to retry and risk duplicate submissions.
+      let alreadySaved=false;
+      try {
+        const latest=await api('ciStudentJobs');
+        const current=latest&&Array.isArray(latest.items)&&latest.items.find(x=>x.registrationId===selected.registrationId);
+        if(current && current.record && (phase==='in' ? ['CheckedIn','PendingReview','Approved'].includes(current.record.status) : ['PendingReview','Approved'].includes(current.record.status))){
+          alreadySaved=true;
+          state.studentItems=latest.items;
+          $('ciStudentEnabled').value=String(Boolean(latest.enabled));
+          resetPhoto();refreshStudentSelection();
+          await msg('ตรวจสอบพบว่าระบบบันทึก'+(phase==='in'?'เวลาเข้างาน':'เวลาออกงาน')+'ไว้แล้ว ไม่ต้องกดส่งซ้ำ','success');
+        }
+      }catch(_){/* Keep the captured photo and show original error if verification is unavailable. */}
+      if(!alreadySaved)await fail(e);
+    }finally{busy(false)}
   }
   function adminSelection(){return state.adminJobs.find(x=>x.activityId===$('ciAdminJob').value)||null;}
   function fillConfig(){
