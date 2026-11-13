@@ -585,7 +585,12 @@ function adminPayrollBulkApproveSelected_() {
       }
     }).withFailureHandler(function(err){
       hideLoading();
-      showAlert('การเชื่อมต่อขัดข้อง กรุณาโหลดรายการใหม่และตรวจว่ามีการบันทึกแล้วหรือไม่ ก่อนกดซ้ำ: '+(err && err.message || err),'error');
+      var payrollError = String(err && err.message || err);
+      if (/^Forbidden: API action นี้ไม่ได้รับอนุญาต/.test(payrollError)) {
+        showAlert('ยังไม่ได้เปิดใช้งาน API อนุมัติค่าตอบแทนแบบกลุ่มบนเซิร์ฟเวอร์ กรุณาอัปเดต Api.gs และ Deploy เวอร์ชันใหม่ (คำขอนี้ไม่ถูกบันทึก)','error');
+      } else {
+        showAlert('การเชื่อมต่อขัดข้อง กรุณาโหลดรายการใหม่และตรวจว่ามีการบันทึกแล้วหรือไม่ ก่อนกดซ้ำ: '+payrollError,'error');
+      }
       // Network timeout may occur after commit: force a fresh server fetch, not blind retry.
       loadPayrollPage();
     }).adminApproveJobPayrollBulk(sessionStorage.getItem('sessionToken'),{agency:agency,items:items});
@@ -662,8 +667,12 @@ function adminSpecialBulkApproveSelected_() {
     }).withFailureHandler(function(err){
       hideLoading();
       adminSpecialBulkBusy_ = false;
-      showAlert('ไม่ทราบว่าบันทึกสำเร็จหรือไม่ กรุณาตรวจสอบ Payroll ก่อนกดซ้ำ: '+
-        String(err && err.message || err),'error');
+      var payrollError = String(err && err.message || err);
+      if (/^Forbidden: API action นี้ไม่ได้รับอนุญาต/.test(payrollError)) {
+        showAlert('ยังไม่ได้เปิดใช้งาน API อนุมัติงานเฉพาะด้านแบบกลุ่มบนเซิร์ฟเวอร์ กรุณาอัปเดต Api.gs และ Deploy เวอร์ชันใหม่ (คำขอนี้ไม่ถูกบันทึก)','error');
+      } else {
+        showAlert('ไม่ทราบว่าบันทึกสำเร็จหรือไม่ กรุณาตรวจสอบ Payroll ก่อนกดซ้ำ: '+payrollError,'error');
+      }
       loadPayrollPage();
     }).adminApproveAgencyTimeLogsBulk(sessionStorage.getItem('sessionToken'),{agency:agency,groups:groups});
   });
